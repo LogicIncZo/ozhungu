@@ -87,6 +87,11 @@ option). Argmax at or above a configurable confidence floor becomes a move; ever
 else — low confidence, __keep__, already-in-place — is skipped. Same validator, review
 checklist, executor, and undo journal as the LLM backends.
 
+**v0.6.0** — OpenRouter System One flavor (Decisions API, public 27-model list,
+`~typesafe/jev-latest` default; accepts both `probabilities` and `confidence` answer shapes),
+an All-folders browser in Browse (recursive, drilldown), and a Move-into folder picker on
+Clean that feeds the decision model's option set (picked folders first).
+
 ## Limits (v0.5)
 
 - Moves/renames only — no delete, no copy, no content editing.

@@ -1,32 +1,35 @@
 package `in`.cashlessconsumer.ozhungu.brain
 
 import `in`.cashlessconsumer.ozhungu.Settings
-import `in`.cashlessconsumer.ozhungu.plan.Plan
-import `in`.cashlessconsumer.ozhungu.plan.PlanParser
 import dev.zocomputer.ask.ZoApi
+import okhttp3.Call
 
-/** Talks to the Zo agent: first call plans, follow-ups refine the same conversation. */
-object ZoPlanner {
+/** Zo backend: one planner instance per session; follow-up turns ride the same conversation. */
+class ZoPlanner(private val settings: Settings) : Planner {
 
-    fun plan(
-        settings: Settings,
+    private var convId: String? = null
+    private var call: Call? = null
+
+    override fun plan(
         prompt: String,
-        conversationId: String?,
         onStatus: (String?) -> Unit,
         onDelta: (String) -> Unit,
-        onDone: (String) -> Unit,
+        onDone: (String?) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        ZoApi.ask(
+        call = ZoApi.ask(
             opts = ZoApi.Options(token = settings.token, model = settings.model, persona = ""),
             input = prompt,
-            conversationId = conversationId,
+            conversationId = convId,
             onDelta = onDelta,
             onStatus = onStatus,
-            onDone = onDone,
+            onDone = { cid -> convId = cid; onDone(cid) },
             onError = onError,
         )
     }
 
-    fun parsePlan(text: String): Plan = PlanParser.parse(text)
+    override fun cancel() {
+        call?.cancel()
+        call = null
+    }
 }

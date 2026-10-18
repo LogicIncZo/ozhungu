@@ -41,3 +41,18 @@ Package path starts with `in.` (India TLD) → must be backtick-escaped:
 
 Delete/copy ops, background scheduling, on-device models. If asked, discuss before adding —
 delete especially (contract says moves only).
+
+## v0.2 — OpenAI-compatible backends (2026-10-18)
+
+- `Planner` interface (`brain/Planner.kt`): `plan`/`refine`/`cancel`. `ZoPlanner` keeps
+  conversation continuity server-side (`conversation_id`); `OaiPlanner` replays a local
+  transcript (system + last user + last assistant, trimmed) because /chat/completions is
+  stateless. MainActivity creates a fresh planner per "Ask for a plan" (new session) and
+  reuses it for refinements.
+- `ModelsDev.parse(raw)` is pure + unit-tested: keeps providers with an `api` base URL,
+  drops `NON_OAI_SDKS` (@ai-sdk/anthropic, google, amazon-bedrock), sorts ZDR-text-flagged
+  first. The ★ ZDR badge is TEXT-DERIVED ONLY (models.dev has no retention field) — never
+  present it as a policy guarantee.
+- `OaiPlanner.Sse.delta(line)` is the unit-tested SSE parser; `[DONE]` → null, non-content
+  lines → null. System prompt = `PromptBuilder.SYSTEM_RULES` (made public in v0.2) so both
+  backends enforce the identical plan contract.

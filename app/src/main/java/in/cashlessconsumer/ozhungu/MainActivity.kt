@@ -1,9 +1,13 @@
 package `in`.cashlessconsumer.ozhungu
 
+import `in`.cashlessconsumer.ozhungu.brain.ModelsDev
+import `in`.cashlessconsumer.ozhungu.brain.OaiPlanner
+import `in`.cashlessconsumer.ozhungu.brain.Planner
 import `in`.cashlessconsumer.ozhungu.brain.ZoPlanner
 import `in`.cashlessconsumer.ozhungu.exec.Executor
 import `in`.cashlessconsumer.ozhungu.exec.JournalCodec
 import `in`.cashlessconsumer.ozhungu.exec.JournalEntry
+import `in`.cashlessconsumer.ozhungu.plan.PlanParser
 import `in`.cashlessconsumer.ozhungu.plan.Plan
 import `in`.cashlessconsumer.ozhungu.plan.ValidatedPlan
 import `in`.cashlessconsumer.ozhungu.plan.PlanValidator
@@ -12,6 +16,7 @@ import `in`.cashlessconsumer.ozhungu.saf.SafFs
 import `in`.cashlessconsumer.ozhungu.scan.ScanResult
 import `in`.cashlessconsumer.ozhungu.scan.Scanner
 import android.app.Activity
+import android.content.Context
 import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
@@ -36,7 +41,8 @@ class MainActivity : Activity() {
     private var scan: ScanResult? = null
     private var lastPrompt: String? = null
     private var vp: ValidatedPlan? = null
-    private var convId: String? = null
+    private var planner: Planner? = null
+    private var catalog: List<ModelsDev.CatProvider>? = null
     private var journal: List<JournalEntry> = emptyList()
 
     private lateinit var status: TextView
@@ -50,6 +56,7 @@ class MainActivity : Activity() {
     private lateinit var refineBox: EditText
     private lateinit var refineBtn: Button
     private lateinit var settingsBtn: Button
+    private lateinit var backendBtn: Button
 
     private var rows: List<Row> = emptyList()
 
@@ -96,7 +103,8 @@ class MainActivity : Activity() {
         planBtn = button("3. Ask Zo for a plan") { doPlan() }
         applyBtn = button("4. Apply checked") { doApply() }
         undoBtn = button("Undo last apply") { doUndo() }
-        settingsBtn = button("⚙ Token / model") { editSettings() }
+        backendBtn = button("Backend: Zo") { toggleBackend() }
+        settingsBtn = button("⚙ Tokens / models / folder") { editSettings() }
         refineBox = EditText(this).apply {
             hint = "Refine: e.g. put invoices from March under Bills/2026"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -116,6 +124,7 @@ class MainActivity : Activity() {
 
         root.addView(rootName)
         root.addView(status)
+        root.addView(backendBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(settingsBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(row1)
         root.addView(row2)
@@ -187,32 +196,50 @@ class MainActivity : Activity() {
 
     private fun doPlan() {
         val s = scan ?: run { toast("Scan first"); return }
-        if (settings.token.isBlank()) { toast("Set your Zo token (⚙)"); return }
+        val p = try { buildPlanner(fresh = true) } catch (e: IllegalStateException) { toast(e.message ?: ""); return }
         val prompt = PromptBuilder.build(s)
         lastPrompt = prompt
-        runPlan(prompt, null)
+        runPlan(p, prompt)
     }
 
     private fun doRefine() {
         val text = refineBox.text.toString().trim()
         val base = lastPrompt ?: run { toast("No plan yet"); return }
         if (text.isEmpty()) { toast("Type a refinement first"); return }
-        runPlan("$base\n\nUser refinement: $text\n\nRe-send ONLY the complete updated JSON plan (same schema), superseding the previous one.", convId)
+        val p = planner ?: run { toast("No plan session yet"); return }
+        runPlan(p, "$base\n\nUser refinement: $text\n\nRe-send ONLY the complete updated JSON plan (same schema), superseding the previous one.")
     }
 
-    private fun runPlan(prompt: String, conversationId: String?) {
+    /** Fresh=true starts a new session (new Zo conversation / empty local history). */
+    private fun buildPlanner(fresh: Boolean): Planner {
+        val existing = planner
+        if (!fresh && existing != null) return existing
+        val p: Planner = when (settings.backend) {
+            "oai" -> {
+                if (settings.oaiBaseUrl.isBlank() || settings.oaiModel.isBlank())
+                    throw IllegalStateException("Pick an OpenAI-compatible provider and model (⚙)")
+                OaiPlanner(settings.oaiBaseUrl, settings.oaiKey, settings.oaiModel)
+            }
+            else -> {
+                if (settings.token.isBlank()) throw IllegalStateException("Set your Zo token (⚙)")
+                ZoPlanner(settings)
+            }
+        }
+        planner = p
+        return p
+    }
+
+    private fun runPlan(p: Planner, prompt: String) {
         setBusy(true)
-        status.text = "Zo is thinking…"
+        status.text = if (settings.backend == "oai") "${settings.oaiModel} is thinking…" else "Zo is thinking…"
         var streamed = StringBuilder()
-        ZoPlanner.plan(settings, prompt, conversationId,
-            onStatus = { s -> runOnUiThread { status.text = s ?: "Zo is working…" } },
+        p.plan(prompt,
+            onStatus = { s -> runOnUiThread { status.text = s ?: "Working…" } },
             onDelta = { d -> streamed.append(d) },
-            onDone = { cid ->
-                convId = cid
+            onDone = { _ ->
                 runOnUiThread {
                     try {
-                        val plan = ZoPlanner.parsePlan(streamed.toString())
-                        lastPrompt = prompt
+                        val plan = PlanParser.parse(streamed.toString())
                         showPlan(plan)
                     } catch (e: Throwable) {
                         status.text = "Plan parse failed: ${e.message}"
@@ -221,9 +248,15 @@ class MainActivity : Activity() {
                 }
             },
             onError = { e ->
-                runOnUiThread { setBusy(false); status.text = "Zo error: ${e.message}" }
+                runOnUiThread { setBusy(false); status.text = "Planner error: ${e.message}" }
             },
         )
+    }
+
+    private fun toggleBackend() {
+        settings.backend = if (settings.backend == "zo") "oai" else "zo"
+        planner = null
+        backendBtn.text = if (settings.backend == "zo") "Backend: Zo" else "Backend: OpenAI-compatible"
     }
 
     private fun showPlan(plan: `in`.cashlessconsumer.ozhungu.plan.Plan) {
@@ -309,6 +342,15 @@ class MainActivity : Activity() {
             val p = (16 * resources.displayMetrics.density).toInt()
             setPadding(p, p, p, p)
         }
+        val backendBtn = Button(ctx).apply {
+            text = "Backend: " + if (settings.backend == "oai") "OpenAI-compatible" else "Zo (/zo/ask)"
+            setOnClickListener {
+                val next = if (settings.backend == "oai") "zo" else "oai"
+                settings.backend = next
+                text = "Backend: " + if (next == "oai") "OpenAI-compatible" else "Zo (/zo/ask)"
+                toast("Backend: $next")
+            }
+        }
         val tokenBox = EditText(ctx).apply {
             hint = "Zo access token (Settings ▸ Advanced)"
             setText(settings.token)
@@ -319,18 +361,72 @@ class MainActivity : Activity() {
             setText(settings.model)
             inputType = InputType.TYPE_CLASS_TEXT
         }
-        layout.addView(tokenBox)
-        layout.addView(modelBox)
+        val oaiUrlBox = EditText(ctx).apply {
+            hint = "OpenAI-compat base URL (…/v1)"
+            setText(settings.oaiBaseUrl)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val oaiKeyBox = EditText(ctx).apply {
+            hint = "OpenAI-compat API key"
+            setText(settings.oaiKey)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val oaiModelBox = EditText(ctx).apply {
+            hint = "OpenAI-compat model id"
+            setText(settings.oaiModel)
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        val pickBtn = Button(ctx).apply {
+            text = "Pick model from models.dev"
+            setOnClickListener { pickFromModelsDev(ctx) { oaiUrlBox.setText(it.baseUrl); oaiModelBox.setText(it.modelId) } }
+        }
+        listOf(backendBtn, tokenBox, modelBox, oaiUrlBox, oaiKeyBox, oaiModelBox, pickBtn).forEach { layout.addView(it) }
         AlertDialog.Builder(ctx)
-            .setTitle("Zo settings")
+            .setTitle("Settings")
             .setView(layout)
             .setPositiveButton("Save") { _, _ ->
                 settings.token = tokenBox.text.toString().trim()
                 settings.model = modelBox.text.toString().trim()
+                settings.oaiBaseUrl = oaiUrlBox.text.toString().trim().trimEnd('/')
+                settings.oaiKey = oaiKeyBox.text.toString().trim()
+                settings.oaiModel = oaiModelBox.text.toString().trim()
                 toast("Saved")
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    /** Fetches models.dev, filters OpenAI-compatible providers, ZDR-defaults first. */
+    private fun pickFromModelsDev(ctx: Context, onPick: (ModelsDev.Pick) -> Unit) {
+        status.text = "Fetching models.dev…"
+        Thread {
+            val res = ModelsDev.load(ctx)
+            runOnUiThread {
+                if (res.isFailure) {
+                    status.text = "models.dev fetch failed: ${(res.exceptionOrNull()?.message ?: "").take(120)}"
+                    return@runOnUiThread
+                }
+                val provs = res.getOrThrow()
+                val lines = provs.mapIndexed { i, pr ->
+                    (if (pr.zdr) "★ " else "") + "${pr.name}  (${pr.models.size} models)"
+                }.toTypedArray()
+                AlertDialog.Builder(ctx)
+                    .setTitle("Providers — ZDR-defaults (★) first")
+                    .setItems(lines) { _, w ->
+                        val pr = provs[w]
+                        val mLines = pr.models.map { "${it.id}${if (it.zdr) "  ★ZDR" else ""}" }.toTypedArray()
+                        AlertDialog.Builder(ctx)
+                            .setTitle("${pr.name} — models")
+                            .setItems(mLines) { _, m ->
+                                onPick(ModelsDev.Pick(baseUrl = pr.api, modelId = pr.models[m].id))
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }.start()
     }
 
     private fun setBusy(b: Boolean) {

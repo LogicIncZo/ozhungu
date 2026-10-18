@@ -8,7 +8,7 @@ object PromptBuilder {
 
     const val MAX_PROMPT_ENTRIES = 300
 
-    private val SYSTEM_RULES = """
+    val SYSTEM_RULES = """
         You are the planning half of a file-organizer app on Android. The device scans a
         folder the user picked and sends the listing. You return a move/rename plan as
         JSON. The device executes it with strict local validation, so follow the contract.

@@ -70,7 +70,16 @@
 
   <p>The <em>Test</em> buttons do a real round-trip against the configured backend — Zo lists your available models, OpenAI-compatible endpoints get a <code>GET {base}/models</code> — and show the result inline, so bad tokens or wrong base URLs surface before you scan anything.</p>
 
-  <h3>Decision model (System One — Jev / Clef)</h3>
+  <h3>Decision model (System One — Jev / Clef / OpenRouter)</h3>
+  <p>Two flavors. <strong>Jev-compatible endpoint</strong>: any raw endpoint that takes
+  <code>{state, questions}</code> and returns <code>answers</code> with calibrated
+  probabilities (Cloudflare Workers AI Clef, self-hosted). <strong>OpenRouter</strong>: pick
+  the OpenRouter flavor and Ozhungu talks to the
+  <a href="https://openrouter.ai/docs/guides/community/jev">Decisions API</a> directly —
+  the model list (Jev, pplx-decider, Liquid D1, Solar-Decide, TEV and friends) is fetched
+  from OpenRouter's public endpoint, with <code>~typesafe/jev-latest</code> as the default.
+  One OpenRouter API key covers every model on it.</p>
+  <h3 style="display:none">old</h3>
   <p>The System One tier inverts the LLM flow: instead of asking a model to <em>write</em> a JSON plan, Ozhungu asks a <a href="https://developers.cloudflare.com/workers-ai/models/clef/">decision model</a> one typed <code>choice</code> question per file — "which folder does this belong in?" — with a candidate vocabulary derived from the scan itself (existing folders first, then canonical Pictures/Documents/Bills/…, plus an explicit <code>__keep__</code> option). The model returns a calibrated probability for every option; no free-form text is ever parsed.</p>
   <p>The whole listing goes as the request <code>state</code>, 64 questions per request (Workers AI's cap), so hundreds of files cost a handful of requests at token prices an order of magnitude below chat models. A file is moved only when argmax ≥ your confidence floor (default 60%) and ≠ <code>__keep__</code> and it isn't already in that folder; everything else stays untouched. Duplicate targets get deterministic " (2)" suffixes; the resulting plan still passes the same <code>PlanValidator</code> guardrails and review checklist as LLM plans.</p>
   <table>

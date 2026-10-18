@@ -47,6 +47,10 @@
     <li><strong>Apply N</strong> on the sticky bottom bar, then <strong>Undo</strong> if you don't like the result.</li>
   </ol>
   <div class="note">Refinement works as a conversation: with suggestions on screen, type "no — keep the photos where they are and only sort the PDFs" into the same box and ask again. With the Zo backend the server holds the thread; with an OpenAI-compatible backend the app keeps a local transcript (system + last two turns) in memory only.</div>
+  <div class="warnbox"><strong>Every folder is visible.</strong> The Browse tab lists all
+  sub-folders (any depth) with file counts — tap one to open it. On the Clean tab,
+  <em>Move into</em> lets you tick the folders to use as destinations; the decision model
+  offers your picks first, and LLM backends get them in the prompt.</div>
 </section>
 
 <section id="backends">

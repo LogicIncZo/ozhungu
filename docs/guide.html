@@ -37,9 +37,15 @@
 <main class="wrap">
 
 <section id="firstrun">
-  <h2>First run (v0.5 — Files-by-Google-style UI)</h2>
+  <h2>First run (v0.5 — Files-by-Google-style UI)</h2>  <div class="note"><strong>v0.7 — Downloads now works.</strong> The Clean tab lists common folders
+  (Downloads, DCIM, Pictures, Documents, Music, Movies, WhatsApp, Telegram). Android's SAF
+  picker refuses the Downloads root on Android 11+, so the first tap asks once for
+  <em>All-files access</em>; afterwards Ozhungu reads and moves with plain file I/O.
+  Prefer zero permissions? <em>Choose a folder</em> still works SAF-only for any folder
+  Android will grant.</div>
+
   <ol>
-    <li><strong>Get started.</strong> The home screen opens with a hero card — <em>Organise a folder</em>. Tap it: Android's folder picker (<code>ACTION_OPEN_DOCUMENT_TREE</code>) opens. Pick the folder you want organised — usually <code>Download</code>, <code>Documents</code> or <code>Pictures</code>. The grant is persisted, so it survives restarts.</li>
+    <li><strong>Get started.</strong> The Clean tab lists <em>Common folders</em> — Downloads, DCIM, Pictures, Documents, Music, Movies, WhatsApp, Telegram. Tap one: the app asks for <strong>All-files access</strong> once (Android's SAF picker refuses the Downloads root and volume roots, so plain file access is the only way to reach them), then scans it. Or tap <em>Choose a folder</em> for the zero-permission SAF path — any grantable folder works there. Either grant is persisted across restarts.</li>
     <li><strong>Set a backend</strong> from <em>⚙ Settings</em> (top bar): radio-card backend choice, then a Zo access token, or an OpenAI-compatible base URL + key + model, with <em>Test</em> buttons that round-trip the endpoint and an in-place models.dev browser. See <a href="#backends">Backends</a>.</li>
     <li><strong>Browse tab.</strong> The scan runs automatically and fills the category tiles (Images, Videos, Audio, Documents, Archives, Apps) and the Recent list, just like Files by Google. Tap a tile to see that category's files; long-press files to select them if you want the plan scoped to just those.</li>
     <li><strong>Clean tab.</strong> Tap <em>Get suggestions</em> (optionally with a nudge in the text box, e.g. <em>"put invoices from March under Bills/2026"</em>).</li>

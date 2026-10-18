@@ -13,6 +13,8 @@ import `in`.cashlessconsumer.ozhungu.plan.PlanParser
 import `in`.cashlessconsumer.ozhungu.plan.PlanValidator
 import `in`.cashlessconsumer.ozhungu.plan.PromptBuilder
 import `in`.cashlessconsumer.ozhungu.plan.ValidatedPlan
+import `in`.cashlessconsumer.ozhungu.saf.Fs
+import `in`.cashlessconsumer.ozhungu.saf.PlainFs
 import `in`.cashlessconsumer.ozhungu.saf.SafFs
 import `in`.cashlessconsumer.ozhungu.scan.Categories
 import `in`.cashlessconsumer.ozhungu.scan.ScanEntry
@@ -37,6 +39,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.os.Build
+import android.os.Environment
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -48,6 +52,8 @@ class MainActivity : Activity() {
 
     private lateinit var settings: Settings
     private var treeUri: Uri? = null
+    private var plainRoot: String? = null
+    private var pendingCommon: Pair<File, String>? = null
     private var scan: ScanResult? = null
     private var lastPrompt: String? = null
     private var vp: ValidatedPlan? = null
@@ -96,6 +102,7 @@ class MainActivity : Activity() {
         settings = Settings(this)
 
         settings.treeUri.takeIf { it.isNotBlank() }?.let { treeUri = Uri.parse(it) }
+        settings.plainRoot.takeIf { it.isNotBlank() }?.let { plainRoot = it }
 
         buildUi()
         setContentView(content)
@@ -465,7 +472,7 @@ class MainActivity : Activity() {
 
     private fun renderClean() {
         cleanWrap.removeAllViews()
-        if (treeUri == null) {
+        if (currentFs() == null) {
             val hero = UiKit.label(this, "Organise your files", 22f, UiKit.INK, bold = true)
             val sub = UiKit.label(this, "Ozhungu scans a folder, asks your model for a move plan, and applies only what you approve. Every move is undoable.", 14f, UiKit.DIM)
             val pick = UiKit.primaryButton(this, "Choose a folder") { pickFolder() }
@@ -473,6 +480,22 @@ class MainActivity : Activity() {
             cleanWrap.addView(hero, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, dp(40), 0, dp(8)) })
             cleanWrap.addView(sub)
             cleanWrap.addView(pick, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, dp(24), 0, 0) })
+
+            cleanWrap.addView(UiKit.label(this, "Common folders", 14f, UiKit.INK, bold = true).also {
+                it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, dp(28), 0, dp(8)) }
+            })
+            commonFolders().chunked(2).forEach { pair ->
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                pair.forEach { (name, emoji, path) ->
+                    val b = UiKit.ghostButton(this, "$emoji $name") { openCommonFolder(File(path), name) }
+                    b.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+                    row.addView(b)
+                }
+                cleanWrap.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
+            val hint = UiKit.label(this, "Downloads and other top-level folders need All-files access — Android's SAF picker refuses them. You'll be asked once; tap a folder again afterwards.", 12f, UiKit.DIM)
+            hint.setPadding(dp(8), dp(12), dp(8), 0)
+            cleanWrap.addView(hint)
             setBusy(false)
             return
         }
@@ -484,6 +507,14 @@ class MainActivity : Activity() {
             val scanBtn = UiKit.primaryButton(this, "Scan folder") { doScan(silent = false) }
             scanBtn.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             cleanWrap.addView(scanBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, dp(12), 0, 0) })
+            val change = UiKit.ghostButton(this, "Change folder") {
+                plainRoot = null; settings.plainRoot = ""
+                treeUri = null; settings.treeUri = ""
+                scan = null; vp = null; rows = emptyList(); selection.clear()
+                renderBrowse(); renderClean()
+            }
+            change.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            cleanWrap.addView(change, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, dp(8), 0, 0) })
             setBusy(false)
             return
         }
@@ -575,11 +606,16 @@ class MainActivity : Activity() {
 
     private fun status(msg: String) { status.text = msg }
 
-    private fun rootDisplayName(): String = try {
-        SafFs.displayName(treeUri!!) ?: "folder"
-    } catch (t: Throwable) {
-        t.message ?: "folder"
+    /** Active storage backend: plain folder (All-files mode) wins over the SAF tree. */
+    private fun currentFs(): Fs? {
+        plainRoot?.let { path ->
+            return runCatching { PlainFs(File(path), settings.plainLabel.ifBlank { File(path).name }) }.getOrNull()
+        }
+        return treeUri?.let { runCatching { SafFs(it) }.getOrNull() }
     }
+
+    private fun rootDisplayName(): String =
+        currentFs()?.rootLabel ?: "folder"
 
     private fun backendLabel(): String = when (settings.backend) {
         "oai" -> "Backend: OpenAI-compatible · ${settings.oaiModel.ifBlank { "(no model yet)" }}"
@@ -648,6 +684,58 @@ class MainActivity : Activity() {
             "\nUSER-PICKED TARGET FOLDERS (prefer these when a move fits): " +
                 pickedFolders.sorted().joinToString(", ")
 
+    // ── Storage modes ──────────────────────────────────────────────────────────
+
+    private fun usePlainRoot(dir: File, label: String) {
+        if (!dir.isDirectory) { toast("$label not found on this device"); return }
+        plainRoot = dir.absolutePath
+        settings.plainRoot = dir.absolutePath
+        settings.plainLabel = label
+        scan = null; vp = null; rows = emptyList(); selection.clear()
+        showTab(1)
+        renderBrowse(); renderClean()
+        doScan(silent = false)
+    }
+
+    private fun hasAllFiles(): Boolean =
+        Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()
+
+    private fun openCommonFolder(dir: File, label: String) {
+        when {
+            hasAllFiles() -> usePlainRoot(dir, label)
+            // SAF could grant Downloads only before Android 11's picker restrictions.
+            Build.VERSION.SDK_INT < 30 -> pickFolder()
+            else -> {
+                pendingCommon = dir to label
+                requestAllFiles()
+            }
+        }
+    }
+
+    private fun requestAllFiles() {
+        val i = Intent(
+            android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+            Uri.parse("package:$packageName"),
+        )
+        startActivityForResult(i, REQ_ALLFILES)
+    }
+
+    private fun commonFolders(): List<Triple<String, String, String>> {
+        val ext = Environment.getExternalStorageDirectory() ?: return emptyList()
+        val wa = File(ext, "Android/media/com.whatsapp/WhatsApp/Media")
+        val tg = File(ext, "Android/media/org.telegram.messenger/Telegram")
+        return listOf(
+            Triple("Downloads", "📥", File(ext, "Download").absolutePath),
+            Triple("DCIM", "📷", File(ext, "DCIM").absolutePath),
+            Triple("Pictures", "🖼️", File(ext, "Pictures").absolutePath),
+            Triple("Documents", "📄", File(ext, "Documents").absolutePath),
+            Triple("Music", "🎵", File(ext, "Music").absolutePath),
+            Triple("Movies", "🎬", File(ext, "Movies").absolutePath),
+            Triple("WhatsApp", "💬", wa.absolutePath),
+            Triple("Telegram", "✈️", tg.absolutePath),
+        )
+    }
+
     private fun pickFolder() {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
@@ -657,12 +745,26 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_ALLFILES) {
+            if (hasAllFiles()) {
+                val pc = pendingCommon
+                pendingCommon = null
+                if (pc != null) usePlainRoot(pc.first, pc.second)
+                else renderClean()
+            } else {
+                pendingCommon = null
+                toast("All-files access declined — Android blocks SAF for Downloads; pick a subfolder or try again")
+            }
+            return
+        }
         if (requestCode == REQ_TREE && resultCode == Activity.RESULT_OK) {
             val uri = data?.data ?: return
             contentResolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
             )
+            plainRoot = null
+            settings.plainRoot = ""
             treeUri = uri
             settings.treeUri = uri.toString()
             scan = null; vp = null; rows = emptyList(); selection.clear()
@@ -673,11 +775,11 @@ class MainActivity : Activity() {
     }
 
     private fun doScan(silent: Boolean) {
-        val t = treeUri ?: run { toast("Pick a folder first"); return }
+        val fs = currentFs() ?: run { toast("Pick a folder first"); return }
         if (!silent) { setBusy(true); status("Scanning…") }
         Thread {
             val result = try {
-                Scanner.scan(t) { n -> runOnUiThread { status("Scanning… $n files") } }
+                Scanner.scan(fs) { n -> runOnUiThread { status("Scanning… $n files") } }
             } catch (e: Throwable) {
                 runOnUiThread { setBusy(false); status("Scan failed: ${e.message}") }
                 return@Thread
@@ -791,7 +893,7 @@ class MainActivity : Activity() {
     private fun doApply() {
         val v = vp ?: return
         val s = scopedScan()
-        val t = treeUri ?: return
+        val t = currentFs() ?: return
         val chosen = v.valid.filterIndexed { idx, _ -> rows.getOrNull(idx)?.checked == true }
         if (chosen.isEmpty()) { toast("Nothing checked"); return }
         setBusy(true)
@@ -819,7 +921,7 @@ class MainActivity : Activity() {
     }
 
     private fun doUndo() {
-        val t = treeUri ?: return
+        val t = currentFs() ?: return
         if (journal.isEmpty()) { toast("Nothing to undo"); return }
         setBusy(true)
         Thread {
@@ -859,5 +961,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_TREE = 41
+        private const val REQ_ALLFILES = 42
     }
 }

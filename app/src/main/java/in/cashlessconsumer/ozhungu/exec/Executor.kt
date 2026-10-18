@@ -3,14 +3,11 @@ package `in`.cashlessconsumer.ozhungu.exec
 import `in`.cashlessconsumer.ozhungu.plan.Plan
 import `in`.cashlessconsumer.ozhungu.plan.PlanAction
 import `in`.cashlessconsumer.ozhungu.plan.PlanValidator
-import `in`.cashlessconsumer.ozhungu.saf.SafFs
+import `in`.cashlessconsumer.ozhungu.saf.Fs
 import `in`.cashlessconsumer.ozhungu.scan.ScanResult
-import android.net.Uri
 
-/** Applies a validated plan over SAF, journaling every success for undo. */
-class Executor(treeUri: Uri) {
-
-    private val saf = SafFs(treeUri)
+/** Applies a validated plan over any [Fs] backend, journaling every success for undo. */
+class Executor(private val fs: Fs) {
 
     data class Report(
         val applied: List<JournalEntry>,
@@ -31,15 +28,14 @@ class Executor(treeUri: Uri) {
             try {
                 val toDir = a.to.substringBeforeLast('/', missingDelimiterValue = "")
                 val toName = a.to.substringAfterLast('/')
-                val dstParent = if (toDir.isEmpty()) saf.rootDocUri() else saf.ensurePath(toDir, create = true)
+                val dstParent = fs.ensureDir(toDir, create = true)
                 if (dstParent == null) {
                     failed.add(a to "could not create destination folder '$toDir'")
                     continue
                 }
-                val doc = Uri.parse(src)
-                var result = saf.move(doc, dstParent)
-                if (result != null && saf.nameOf(result) != toName) {
-                    result = saf.rename(result, toName) ?: result
+                var result = fs.move(src, dstParent)
+                if (result != null && fs.nameOf(result) != toName) {
+                    result = fs.rename(result, toName) ?: result
                 }
                 if (result == null) {
                     failed.add(a to "provider refused the move")
@@ -50,7 +46,7 @@ class Executor(treeUri: Uri) {
                         op = a.op,
                         fromRel = a.from,
                         toRel = a.to,
-                        resultUri = result.toString(),
+                        resultUri = result,
                         ts = System.currentTimeMillis(),
                     ),
                 )
@@ -67,16 +63,16 @@ class Executor(treeUri: Uri) {
         val failed = ArrayList<String>()
         for (e in entries.reversed()) {
             try {
-                val doc = Uri.parse(e.resultUri)
-                val toParent = saf.parentOfRel(e.toRel, create = false)
+                val toParent = fs.ensureDir(e.toRel.substringBeforeLast('/', missingDelimiterValue = ""), create = false)
                     ?: throw IllegalStateException("destination folder gone")
-                val fromParent = saf.parentOfRel(e.fromRel, create = true)
+                if (fs.nameOf(e.resultUri) == null) throw IllegalStateException("moved file no longer exists")
+                val fromParent = fs.ensureDir(e.fromRel.substringBeforeLast('/', missingDelimiterValue = ""), create = true)
                     ?: throw IllegalStateException("original folder gone")
-                val moved = saf.move(doc, fromParent)
+                val moved = fs.move(e.resultUri, fromParent)
                     ?: throw IllegalStateException("move back refused")
                 val fromName = e.fromRel.substringAfterLast('/')
-                if (saf.nameOf(moved) != fromName) {
-                    saf.rename(moved, fromName)
+                if (fs.nameOf(moved) != fromName) {
+                    fs.rename(moved, fromName)
                 }
                 undone++
             } catch (t: Throwable) {

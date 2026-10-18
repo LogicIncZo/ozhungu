@@ -4,17 +4,14 @@ import `in`.cashlessconsumer.ozhungu.AppResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 
-/** Thin SAF wrapper for one persisted tree. All relative paths are '/'-separated. */
-class SafFs(val treeUri: Uri) {
+/**
+ * SAF tree backend. All relative paths are '/'-separated; handles are
+ * document-URI strings scoped to the persisted tree grant.
+ */
+class SafFs(val treeUri: Uri) : Fs {
 
-    data class Doc(
-        val uri: Uri,
-        val name: String,
-        val mime: String,
-        val size: Long,
-        val mtime: Long,
-        val isDir: Boolean,
-    )
+    override val rootLabel: String =
+        displayNameOf(rootDocUri()) ?: treeUri.lastPathSegment?.substringAfterLast(':') ?: "folder"
 
     private val folderCache = HashMap<String, Uri>()
 
@@ -29,10 +26,9 @@ class SafFs(val treeUri: Uri) {
     private fun childUri(parentDocId: String): Uri =
         DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
 
-    /** Lists children of a document (root when null). */
-    fun children(parentDocId: String? = null): List<Doc> {
+    private fun children(parentDocId: String): List<Doc> {
         val resolver = AppResolver.query
-        val uri = childUri(parentDocId ?: rootDocId())
+        val uri = childUri(parentDocId)
         val out = ArrayList<Doc>()
         resolver.query(
             uri,
@@ -63,14 +59,43 @@ class SafFs(val treeUri: Uri) {
         return out
     }
 
-    /** First bytes of a document as UTF-8 text, capped at [maxBytes]. */
-    fun readTextHead(docUri: Uri, maxBytes: Int = 4096): String? = runCatching {
-        AppResolver.query.openInputStream(docUri)?.use { ins ->
+    data class Doc(
+        val uri: Uri,
+        val name: String,
+        val mime: String,
+        val size: Long,
+        val mtime: Long,
+        val isDir: Boolean,
+    )
+
+    // ── Fs ──────────────────────────────────────────────────────────────────
+
+    override fun rootHandle(): String = rootDocUri().toString()
+
+    override fun list(dirHandle: String): List<Fs.Entry> =
+        runCatching { children(DocumentsContract.getDocumentId(Uri.parse(dirHandle))) }
+            .getOrDefault(emptyList())
+            .map { d ->
+                Fs.Entry(
+                    name = d.name,
+                    mime = d.mime,
+                    size = d.size,
+                    mtime = d.mtime,
+                    isDir = d.isDir,
+                    handle = d.uri.toString(),
+                )
+            }
+
+    override fun readTextHead(handle: String, maxBytes: Int): String? = runCatching {
+        AppResolver.query.openInputStream(Uri.parse(handle))?.use { ins ->
             val buf = ByteArray(maxBytes)
             val n = ins.read(buf)
             if (n <= 0) null else String(buf, 0, n, Charsets.UTF_8)
         }
     }.getOrNull()
+
+    override fun ensureDir(relDir: String, create: Boolean): String? =
+        ensurePath(relDir, create)?.toString()
 
     /**
      * Resolves (and optionally creates) the folder at [relDir], returning its document URI.
@@ -96,9 +121,15 @@ class SafFs(val treeUri: Uri) {
         return result
     }
 
+    override fun move(handle: String, dstDirHandle: String): String? =
+        move(Uri.parse(handle), Uri.parse(dstDirHandle))?.toString()
+
     /** Moves [srcDocUri] into [dstParentUri]; returns the new document URI. */
     fun move(srcDocUri: Uri, dstParentUri: Uri): Uri? =
         DocumentsContract.moveDocument(AppResolver.query, srcDocUri, parentOf(srcDocUri), dstParentUri)
+
+    override fun rename(handle: String, newName: String): String? =
+        rename(Uri.parse(handle), newName)?.toString()
 
     fun rename(docUri: Uri, newName: String): Uri? =
         DocumentsContract.renameDocument(AppResolver.query, docUri, newName)
@@ -114,7 +145,7 @@ class SafFs(val treeUri: Uri) {
     fun parentOfRel(rel: String, create: Boolean = false): Uri? =
         ensurePath(rel.substringBeforeLast('/', missingDelimiterValue = ""), create)
 
-    fun nameOf(docUri: Uri): String? = displayNameOf(docUri)
+    override fun nameOf(handle: String): String? = displayNameOf(Uri.parse(handle))
 
     companion object {
         /** Display name of the tree root ("Downloads", "Internal storage", ...). */

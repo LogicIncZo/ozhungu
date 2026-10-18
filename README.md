@@ -92,12 +92,12 @@ checklist, executor, and undo journal as the LLM backends.
 an All-folders browser in Browse (recursive, drilldown), and a Move-into folder picker on
 Clean that feeds the decision model's option set (picked folders first).
 
-## Limits (v0.6)
+## Limits (v0.7)
 
 - Moves/renames only — no delete, no copy, no content editing.
 - OAI-compatible mode sends the same scoped listing to whatever endpoint you configure —
   the contract, validator, and SAF-only execution are identical to the Zo backend.
-- `/Android` trees (app-private dirs) are skipped by the scanner.
+- `/Android/data` and `/Android/obb` are skipped by the scanner; `/Android/media` (WhatsApp/Telegram media) is scanned.
 - A stale scan (files changed elsewhere mid-session) fails those rows individually, not the batch.
 - Providers that refuse `moveDocument`/`renameDocument` (rare on API 26+) report a per-row failure.
 
@@ -120,3 +120,13 @@ JVM tests + lint + assembleDebug; `make apk` copies to `releases/ozhungu-latest.
 GitHub Actions (`.github/workflows/android.yml`): tests + lint + debug APK artifact per push.
 
 License: GPL-3.0-or-later.
+
+## Storage modes (v0.7)
+
+- **SAF (default, zero permissions):** pick any grantable folder — but Android 11+ refuses
+  the Downloads root and storage-volume roots in the system picker.
+- **All-files access (opt-in):** tap a common folder (Downloads, DCIM, Pictures, Documents,
+  Music, Movies, WhatsApp, Telegram) on the Clean tab; the app asks for
+  `MANAGE_EXTERNAL_STORAGE` once and then reads/writes with `java.io.File` (`PlainFs`),
+  which reaches exactly the folders SAF refuses. Same `Fs` interface, same validator,
+  same journal/undo as SAF mode.

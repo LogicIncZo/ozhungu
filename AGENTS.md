@@ -114,6 +114,28 @@ Invariants:
 - `setBusy` gates plan/apply/undo; the bottom-bar apply label always recomputes from rows.
 - Do not add Compose, appcompat, or Material Components. No XML layouts.
 
+## v0.7 — Storage modes: SAF + All-files access (2026-10-18)
+
+- `saf/Fs.kt` is the storage interface (opaque string handles: SAF = document URI,
+  plain = absolute path). `SafFs` (per-tree SAF) and `PlainFs` (java.io.File,
+  JVM-testable — no android imports) both implement it. Scanner + Executor + MainActivity
+  only see `Fs`.
+- **SAF mode (default, zero permissions):** Android 11+ refuses the Downloads root and
+  storage-volume roots in `ACTION_OPEN_DOCUMENT_TREE` — that was the v0.6 blocker.
+- **All-files mode (opt-in):** common-folder tiles on the Clean hero (Downloads, DCIM,
+  Pictures, Documents, Music, Movies, WhatsApp, Telegram — paths from
+  `Environment.getExternalStorageDirectory()`); first tap fires
+  `ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION` (REQ_ALLFILES=42, `pendingCommon`
+  resumes the tap on grant). Prefs: `plain_root` + `plain_label`; picking a SAF tree
+  clears `plain_root`. Guard every `Environment.isExternalStorageManager()` call with
+  `SDK_INT >= 30` (minSdk 26, lint NewApi).
+- Scanner skip rules moved to pure `Scanner.skipsDir(rel)`: dot-dirs + LOST.DIR checked
+  on the **last segment** (not the whole rel), `Android/data` + `Android/obb` as subtree
+  prefixes, **`Android/media` is scanned** (WhatsApp/Telegram media).
+- `Scanner.guessMime` touches `MimeTypeMap` (not mocked in JVM tests) — tests must feed
+  entries with mime set (PlainFs returns mime via its own ext map; blank mime falls back
+  only on device).
+
 ## v0.6 — OpenRouter System One + real folder browsing (2026-10-18)
 
 - Decision backend has two flavors (`settings.dFlavor`): `clef` (raw Jev-compatible endpoint,

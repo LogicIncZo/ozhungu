@@ -41,6 +41,16 @@ class Settings(context: Context) {
     var dThreshold: Int
         get() = sp.getInt(KEY_D_THRESHOLD, 60)
         set(v) = sp.edit().putInt(KEY_D_THRESHOLD, v).apply()
+    /** All-files mode: absolute path of the folder being organised (empty = SAF mode). */
+    var plainRoot: String
+        get() = sp.getString(KEY_PLAIN_ROOT, "").orEmpty()
+        set(v) = sp.edit().putString(KEY_PLAIN_ROOT, v).apply()
+
+    /** Display label for the plain root ("Download", "DCIM", ...). */
+    var plainLabel: String
+        get() = sp.getString(KEY_PLAIN_LABEL, "").orEmpty()
+        set(v) = sp.edit().putString(KEY_PLAIN_LABEL, v).apply()
+
     /** Decision backend flavor: "clef" (raw Jev-compatible endpoint) or "openrouter". */
     var dFlavor: String
         get() = sp.getString(KEY_D_FLAVOR, "clef").orEmpty()
@@ -79,6 +89,8 @@ class Settings(context: Context) {
         private const val KEY_D_ENDPOINT = "decision_endpoint"
         private const val KEY_D_KEY = "decision_key"
         private const val KEY_D_THRESHOLD = "decision_threshold"
+        private const val KEY_PLAIN_ROOT = "plain_root"
+        private const val KEY_PLAIN_LABEL = "plain_label"
         private const val KEY_D_FLAVOR = "decision_flavor"
         private const val KEY_D_MODEL = "decision_model"
     }

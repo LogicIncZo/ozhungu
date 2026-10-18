@@ -136,7 +136,27 @@ Invariants:
   entries with mime set (PlainFs returns mime via its own ext map; blank mime falls back
   only on device).
 
-## v0.6 — OpenRouter System One + real folder browsing (2026-10-18)
+## v0.7 — All-files-access storage mode (2026-10-18)
+
+- User pain: SAF picker refuses the Downloads root on Android 11+ ("to protect your
+  privacy"), so common-folder cleanup was impossible SAF-only. Fix = opt-in
+  MANAGE_EXTERNAL_STORAGE (All-files access) + `PlainFs` (java.io.File backend).
+- `saf/Fs.kt` is the storage interface (opaque handles: SAF doc-URIs vs absolute paths);
+  `SafFs` and `PlainFs` implement it. Scanner/Executor/MainActivity are backend-agnostic.
+  Journal `resultUri` holds the handle either way — undo is backend-uniform.
+- Common-folder quick picks on the Clean hero: Downloads, DCIM, Pictures, Documents,
+  Music, Movies, WhatsApp (`Android/media/com.whatsapp/...`), Telegram. First tap fires
+  `ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION` (REQ_ALLFILES=42) and resumes on result
+  via `pendingCommon`.
+- Scanner skip rules now path-based: dot-dir *names* at any depth, `Android/data`,
+  `Android/obb` — `Android/media` (chat-app media) IS scanned. `skipsDir(rel)` is pure
+  and unit-tested.
+- Manifest gained MANAGE_EXTERNAL_STORAGE; `Environment.isExternalStorageManager()`
+  guarded with @ChecksSdkIntAtLeast(Build.VERSION_CODES.R) — lint stays green at minSdk 26.
+- 61 JVM tests; PlainFs/Scanner exercised over real temp dirs (MimeTypeMap never touched:
+  PlainFs supplies mime, Scanner.guessMime stays android-only at runtime).
+
+## v0.6 — OpenRouter System One + real folder browsing (2026-10-18)## v0.6 — OpenRouter System One + real folder browsing (2026-10-18)
 
 - Decision backend has two flavors (`settings.dFlavor`): `clef` (raw Jev-compatible endpoint,
   e.g. Cloudflare Workers AI) and `openrouter` (`DecisionPlanner.OPENROUTER_URL` =

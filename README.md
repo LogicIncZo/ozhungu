@@ -40,18 +40,29 @@ persisted tree grant — no `MANAGE_EXTERNAL_STORAGE`, no `All files access` pro
 ## Usage
 
 1. ⚙ Settings — a full-screen settings UI: radio-card backend choice (Zo /
-   OpenAI-compatible), password-masked key fields with show/hide, **Test** buttons that
-   round-trip the endpoint (Zo lists your models; OAI does `GET {base}/models`), a
-   searchable in-place models.dev browser (★ ZDR-defaults first, provider-grouped), and
-   a model-list fetch for Zo. Saves back to EncryptedSharedPreferences.
+   OpenAI-compatible / System One decision model), password-masked key fields with
+   show/hide, **Test** buttons that round-trip the endpoint (Zo lists your models; OAI
+   does `GET {base}/models`; decision models answer one `noul` question), a searchable
+   in-place models.dev browser (★ ZDR-defaults first, provider-grouped), and a
+   model-list fetch for Zo. Saves back to EncryptedSharedPreferences.
 2. Pick folder — SAF tree picker (Downloads, internal storage root, SD card…).
 3. Scan — walks the tree (depth ≤ 4, ≤ 600 files, snippets for small text files).
-4. Ask Zo for a plan — streams; the plan lands as a checklist of
+4. Ask for a plan — the Zo/OAI backends stream one; the decision backend answers in batches; the plan lands as a checklist of
    `✓ MOVE a/b.pdf → Bills/2026/a.pdf (reason)` rows.
 5. Uncheck what you don't want → **Apply** → **Undo** reverses the whole batch newest-first.
 6. Refine in the same conversation: "put invoices from March under Bills/2026".
 
-## Limits (v0.2)
+**v0.4 — System One decision models:** a third backend speaks the Jev-compatible
+"System One" API (TypeSafe Jev, Cloudflare Clef/Clef-flash on Workers AI, self-hosted
+Clef) — the model answers typed folder-choice questions with calibrated probabilities
+instead of generating text. The scan listing is the request `state`; every file becomes
+one `choice` question (64 per request) over a shared candidate vocabulary (existing
+folders first, then canonical Pictures/Documents/Bills/…, plus an explicit __keep__
+option). Argmax at or above a configurable confidence floor becomes a move; everything
+else — low confidence, __keep__, already-in-place — is skipped. Same validator, review
+checklist, executor, and undo journal as the LLM backends.
+
+## Limits (v0.4)
 
 - Moves/renames only — no delete, no copy, no content editing.
 - OAI-compatible mode sends the same scoped listing to whatever endpoint you configure —

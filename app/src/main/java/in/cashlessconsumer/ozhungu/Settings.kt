@@ -22,10 +22,25 @@ class Settings(context: Context) {
         get() = sp.getString(KEY_MODEL, "").orEmpty()
         set(v) = sp.edit().putString(KEY_MODEL, v).apply()
 
-    /** "zo" (default) or "oai" (OpenAI-compatible endpoint). */
+    /** "zo" (default), "oai" (OpenAI-compatible endpoint), or "decision" (System One / Jev). */
     var backend: String
         get() = sp.getString(KEY_BACKEND, "zo").orEmpty().ifBlank { "zo" }
         set(v) = sp.edit().putString(KEY_BACKEND, v).apply()
+
+    /** System One decision endpoint — full run URL, e.g. Workers AI
+     *  https://api.cloudflare.com/client/v4/accounts/<acct>/ai/run/@cf/cloudflare/clef-flash */
+    var dEndpoint: String
+        get() = sp.getString(KEY_D_ENDPOINT, "").orEmpty()
+        set(v) = sp.edit().putString(KEY_D_ENDPOINT, v).apply()
+
+    var dKey: String
+        get() = sp.getString(KEY_D_KEY, "").orEmpty()
+        set(v) = sp.edit().putString(KEY_D_KEY, v).apply()
+
+    /** Minimum calibrated probability (1–99) required to act; below → file left in place. */
+    var dThreshold: Int
+        get() = sp.getInt(KEY_D_THRESHOLD, 60)
+        set(v) = sp.edit().putInt(KEY_D_THRESHOLD, v).apply()
 
     /** OpenAI-compatible base URL, e.g. https://openrouter.ai/api/v1 (no trailing slash). */
     var oaiBaseUrl: String
@@ -52,5 +67,8 @@ class Settings(context: Context) {
         private const val KEY_OAI_BASE = "oai_base_url"
         private const val KEY_OAI_KEY = "oai_api_key"
         private const val KEY_OAI_MODEL = "oai_model"
+        private const val KEY_D_ENDPOINT = "decision_endpoint"
+        private const val KEY_D_KEY = "decision_key"
+        private const val KEY_D_THRESHOLD = "decision_threshold"
     }
 }

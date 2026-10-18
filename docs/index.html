@@ -63,12 +63,13 @@
 
 <section>
   <h2>Bring your own model</h2>
-  <p>Two backends, same plan contract:</p>
+  <p>Three backends, same plan contract:</p>
   <table>
     <thead><tr><th>Backend</th><th>Endpoint</th><th>Continuity</th></tr></thead>
     <tbody>
       <tr><td>Zo</td><td><code>/zo/ask</code> (SSE, via the zo-kotlin SDK)</td><td>Server-side conversation — refinements don't resend the listing</td></tr>
       <tr><td>OpenAI-compatible</td><td><code>{base}/chat/completions</code> — OpenRouter, DeepSeek, Groq, Ollama, LM Studio, vLLM…</td><td>Local transcript, in memory, last two turns</td></tr>
+      <tr><td>Decision model <em>(System One)</em></td><td>Any Jev-compatible endpoint — Cloudflare Clef / Clef-flash on Workers AI, self-hosted Clef — typed <code>choice</code> questions, calibrated probabilities, up to 64 files per request</td><td>Single-shot; confidence floor leaves unsure files in place</td></tr>
     </tbody>
   </table>
   <p>Settings is a proper page, not a pile of dialogs: backend cards, masked keys with show-toggles, an inline <em>Test</em> that hits the endpoint before you commit, and a searchable model browser that reads <a href="https://models.dev">models.dev</a> — only providers that publish an API base URL, with zero-data-retention mentions badged ★ and sorted first. The badge is a hint from public metadata, not a contract — <a href="guide.html#backends">read it as one</a>.</p>
@@ -78,11 +79,11 @@
   <h2>Build &amp; verify</h2>
   <pre><code>git clone https://github.com/LogicIncZo/ozhungu &amp;&amp; cd ozhungu
 echo "sdk.dir=/path/to/android-sdk" &gt; local.properties
-make verify     # 29 JVM tests + lint + assembleDebug
+make verify     # 41 JVM tests + lint + assembleDebug
 make apk        # → releases/ozhungu-latest.apk
 make coverage   # JaCoCo line table</code></pre>
   <p>Requires JDK 17 and Android SDK 35. The Zo backend needs the sibling <a href="https://github.com/LogicIncZo/zo-kotlin">zo-kotlin</a> checkout (composite build); the OpenAI-compatible backend doesn't.</p>
-  <p class="dim">The tested core — parser, validator, prompt builder, plan grammar, journal, SSE/transcript — sits at 94–100% line coverage. The untested remainder is UI wiring and SAF plumbing that needs a device. Details in the <a href="guide.html#tests">guide</a>.</p>
+  <p class="dim">The tested core — parser, validator, prompt builder, plan grammar, journal, SSE/transcript, decision-model core (97%) — sits at 94–100% line coverage. The untested remainder is UI wiring and SAF plumbing that needs a device. Details in the <a href="guide.html#tests">guide</a>.</p>
 </section>
 
 <section>

@@ -22,6 +22,8 @@ import android.widget.Toast
 import `in`.cashlessconsumer.ozhungu.brain.ModelsDev
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -36,15 +38,21 @@ class SettingsActivity : Activity() {
 
     private lateinit var radioZo: RadioButton
     private lateinit var radioOai: RadioButton
+    private lateinit var radioDecision: RadioButton
     private lateinit var zoPanel: ViewGroup
     private lateinit var oaiPanel: ViewGroup
+    private lateinit var decisionPanel: ViewGroup
     private lateinit var zoToken: EditText
     private lateinit var zoModel: EditText
     private lateinit var oaiUrl: EditText
     private lateinit var oaiKey: EditText
     private lateinit var oaiModel: EditText
+    private lateinit var dEndpoint: EditText
+    private lateinit var dKey: EditText
+    private lateinit var dThreshold: EditText
     private lateinit var zoStatus: TextView
     private lateinit var oaiStatus: TextView
+    private lateinit var decisionStatus: TextView
 
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -125,10 +133,14 @@ class SettingsActivity : Activity() {
         val oaiSub = caption("Any /chat/completions endpoint — OpenRouter, LM Studio,\nllama.cpp server, ollama, vLLM, …")
         val zoRadio = RadioButton(this).apply { text = "Zo agent" }.also { radioZo = it }
         val oaiRadio = RadioButton(this).apply { text = "OpenAI-compatible" }.also { radioOai = it }
+        val decisionSub = caption("System One / Jev-style (Cloudflare Clef, self-hosted Clef) —\nanswers typed folder choices with calibrated probabilities.\nNo free-form model output; cheapest and fastest tier.")
+        val decisionRadio = RadioButton(this).apply { text = "Decision model (System One)" }.also { radioDecision = it }
         group.addView(zoRadio)
         group.addView(zoSub)
         group.addView(oaiRadio)
         group.addView(oaiSub)
+        group.addView(decisionRadio)
+        group.addView(decisionSub)
         group.setOnCheckedChangeListener { _, _ -> syncPanels() }
         body.addView(group)
 
@@ -188,6 +200,39 @@ class SettingsActivity : Activity() {
         oaiPanel.addView(oaiStatus)
         body.addView(oaiPanel)
 
+        // ── System One decision panel ────────────────────────────────────────
+        decisionPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        decisionPanel.addView(header("Decision model (System One)"))
+        decisionPanel.addView(caption(
+            "Jev-compatible endpoint. Cloudflare Workers AI: create an API token with " +
+                "Workers AI edit permission and use the ai/run URL of @cf/cloudflare/clef " +
+                "or clef-flash. Self-hosted Clef: its /v1/decisions URL, no key needed."
+        ))
+        decisionPanel.addView(label("Endpoint URL (full)"))
+        val dUrlBox = EditText(this).apply {
+            setText(settings.dEndpoint)
+            hint = "https://api.cloudflare.com/client/v4/accounts/<id>/ai/run/@cf/cloudflare/clef-flash"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        }
+        dEndpoint = dUrlBox
+        decisionPanel.addView(dUrlBox)
+        decisionPanel.addView(label("API key (blank for self-hosted)"))
+        val (dKeyRow, dKeyBox) = secret(settings.dKey, "workers ai token")
+        dKey = dKeyBox
+        decisionPanel.addView(dKeyRow)
+        decisionPanel.addView(label("Confidence floor (%) — answers below this leave the file in place"))
+        val dThrBox = EditText(this).apply {
+            setText(settings.dThreshold.toString())
+            hint = "60"
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+        dThreshold = dThrBox
+        decisionPanel.addView(dThrBox)
+        decisionPanel.addView(rowOf(button("Test connection") { testDecision() }))
+        decisionStatus = caption("")
+        decisionPanel.addView(decisionStatus)
+        body.addView(decisionPanel)
+
         // ── Privacy + save ──────────────────────────────────────────────────
         body.addView(header("Privacy"))
         body.addView(caption(
@@ -204,7 +249,11 @@ class SettingsActivity : Activity() {
         root.addView(body)
         setContentView(root)
 
-        if (settings.backend == "oai") oaiRadio.isChecked = true else zoRadio.isChecked = true
+        when (settings.backend) {
+            "oai" -> oaiRadio.isChecked = true
+            "decision" -> decisionRadio.isChecked = true
+            else -> zoRadio.isChecked = true
+        }
         syncPanels()
     }
 
@@ -218,15 +267,23 @@ class SettingsActivity : Activity() {
     private fun syncPanels() {
         zoPanel.visibility = if (radioZo.isChecked) View.VISIBLE else View.GONE
         oaiPanel.visibility = if (radioOai.isChecked) View.VISIBLE else View.GONE
+        decisionPanel.visibility = if (radioDecision.isChecked) View.VISIBLE else View.GONE
     }
 
     private fun save() {
-        settings.backend = if (radioOai.isChecked) "oai" else "zo"
+        settings.backend = when {
+            radioOai.isChecked -> "oai"
+            radioDecision.isChecked -> "decision"
+            else -> "zo"
+        }
         settings.token = zoToken.text.toString().trim()
         settings.model = zoModel.text.toString().trim()
         settings.oaiBaseUrl = oaiUrl.text.toString().trim().trimEnd('/')
         settings.oaiKey = oaiKey.text.toString().trim()
         settings.oaiModel = oaiModel.text.toString().trim()
+        settings.dEndpoint = dEndpoint.text.toString().trim()
+        settings.dKey = dKey.text.toString().trim()
+        settings.dThreshold = dThreshold.text.toString().trim().toIntOrNull()?.coerceIn(1, 99) ?: 60
         Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
     }
 
@@ -285,6 +342,48 @@ class SettingsActivity : Activity() {
                 runOnUiThread { zoStatus.text = "✓ Connected — $n models available." }
             } catch (e: Exception) {
                 runOnUiThread { zoStatus.text = "✗ ${e.message?.take(140)}" }
+            }
+        }.start()
+    }
+
+    /** One-question noul round-trip: proves state+questions+answers wiring works. */
+    private fun testDecision() {
+        val url = dEndpoint.text.toString().trim()
+        if (url.isBlank()) { decisionStatus.text = "Paste an endpoint URL first."; return }
+        val key = dKey.text.toString().trim()
+        decisionStatus.text = "Testing…"
+        Thread {
+            try {
+                val body = JSONObject()
+                    .put("state", "connection test")
+                    .put(
+                        "questions",
+                        JSONObject().put(
+                            "t",
+                            JSONObject()
+                                .put("type", "noul")
+                                .put("instructions", "Does 1+1 equal 2?"),
+                        ),
+                    ).toString()
+                val rb = Request.Builder().url(url).post(body.toRequestBody("application/json".toMediaType()))
+                if (key.isNotBlank()) rb.header("Authorization", "Bearer $key")
+                http.newCall(rb.build()).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    runOnUiThread {
+                        if (!resp.isSuccessful) {
+                            decisionStatus.text = "✗ HTTP ${resp.code}: ${text.take(120)}"
+                            return@runOnUiThread
+                        }
+                        val root = runCatching { JSONObject(text) }.getOrNull()
+                        val answers = root?.optJSONObject("result")?.optJSONObject("answers")
+                            ?: root?.optJSONObject("answers")
+                        val p = answers?.optJSONObject("t")?.optDouble("noul")
+                        decisionStatus.text = if (p != null && !p.isNaN()) "✓ Connected — p(yes)=$p"
+                                              else "⚠ Reachable, but no probabilities in response."
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { decisionStatus.text = "✗ ${e.message?.take(140)}" }
             }
         }.start()
     }

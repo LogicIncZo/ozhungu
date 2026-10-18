@@ -66,9 +66,22 @@
       <tr><td>Model id</td><td>whatever the endpoint expects, e.g. <code>qwen3-coder:30b</code></td></tr>
     </tbody>
   </table>
-  <p>Requests go to <code>{base}/chat/completions</code> with <code>stream: true</code>, and deltas are parsed from SSE as they arrive.</p>  <p>Requests go to <code>{base}/chat/completions</code> with <code>stream: true</code>, and deltas are parsed from SSE as they arrive.</p>
+  <p>Requests go to <code>{base}/chat/completions</code> with <code>stream: true</code>, and deltas are parsed from SSE as they arrive.</p>
 
   <p>The <em>Test</em> buttons do a real round-trip against the configured backend — Zo lists your available models, OpenAI-compatible endpoints get a <code>GET {base}/models</code> — and show the result inline, so bad tokens or wrong base URLs surface before you scan anything.</p>
+
+  <h3>Decision model (System One — Jev / Clef)</h3>
+  <p>The System One tier inverts the LLM flow: instead of asking a model to <em>write</em> a JSON plan, Ozhungu asks a <a href="https://developers.cloudflare.com/workers-ai/models/clef/">decision model</a> one typed <code>choice</code> question per file — "which folder does this belong in?" — with a candidate vocabulary derived from the scan itself (existing folders first, then canonical Pictures/Documents/Bills/…, plus an explicit <code>__keep__</code> option). The model returns a calibrated probability for every option; no free-form text is ever parsed.</p>
+  <p>The whole listing goes as the request <code>state</code>, 64 questions per request (Workers AI's cap), so hundreds of files cost a handful of requests at token prices an order of magnitude below chat models. A file is moved only when argmax ≥ your confidence floor (default 60%) and ≠ <code>__keep__</code> and it isn't already in that folder; everything else stays untouched. Duplicate targets get deterministic " (2)" suffixes; the resulting plan still passes the same <code>PlanValidator</code> guardrails and review checklist as LLM plans.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td>Endpoint URL (full)</td><td><code>https://api.cloudflare.com/client/v4/accounts/&lt;account&gt;/ai/run/@cf/cloudflare/clef-flash</code> — or a self-hosted Clef <code>/v1/decisions</code> URL</td></tr>
+      <tr><td>API key</td><td>Workers AI token; blank for self-hosted</td></tr>
+      <tr><td>Confidence floor (%)</td><td><code>60</code> — answers below this leave the file in place</td></tr>
+    </tbody>
+  </table>
+  <p><em>Test connection</em> sends a one-question <code>noul</code> round-trip to prove the wiring. Refinements don't apply to this backend — it's single-shot by design; switch to Zo or an OpenAI-compatible model for conversation.</p>
 
   <h3>Browsing the models.dev catalog</h3>
   <p>The <em>Browse catalog</em> button in the OpenAI-compatible section fetches <a href="https://models.dev/api.json">models.dev/api.json</a> (cached on disk for 24 hours, in-memory after that) and opens a full-screen picker:</p>
@@ -155,7 +168,7 @@
 
 <section id="tests">
   <h2>Tests &amp; coverage</h2>
-  <pre><code>make test       # 29 JVM unit tests, no emulator
+  <pre><code>make test       # 41 JVM unit tests, no emulator
 make lint       # Android lint
 make coverage   # JaCoCo per-class line table (scripts/coverage_summary.py)
 make verify     # test + lint + assembleDebug</code></pre>
@@ -167,10 +180,12 @@ make verify     # test + lint + assembleDebug</code></pre>
       <tr><td>PromptBuilder</td><td class="ok">94.1%</td></tr>
       <tr><td>OaiPlanner.Sse / Transcript, JournalCodec, plan grammar</td><td class="ok">100%</td></tr>
       <tr><td>ModelsDev catalog parse (network + cache paths uncovered)</td><td class="ok">64.3%</td></tr>
+      <tr><td>DecisionModel (System One core)</td><td class="ok">97.4%</td></tr>
+      <tr><td>DecisionModel — System One core (vocabulary, batching, parse, decide)</td><td class="ok">97.4%</td></tr>
       <tr><td>MainActivity, SafFs, Scanner, Executor, Settings, OkHttp paths</td><td class="warn">Android-instrumentation boundary — untested by design</td></tr>
     </tbody>
   </table>
-  <p>CI runs tests + lint and publishes a debug APK plus the JaCoCo report as artifacts on every push. The honest number for the whole app is 26.4% of lines — the tested quarter is the quarter that decides what happens to your files, and the untested three-quarters is UI wiring and SAF plumbing that needs an emulator or device to exercise properly.</p>
+  <p>CI runs tests + lint and publishes a debug APK plus the JaCoCo report as artifacts on every push. The honest number for the whole app is 27.1% of lines — the tested quarter is the quarter that decides what happens to your files, and the untested three-quarters is UI wiring and SAF plumbing that needs an emulator or device to exercise properly.</p>
 </section>
 
 <section id="privacy">

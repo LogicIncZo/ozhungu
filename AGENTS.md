@@ -27,7 +27,7 @@ AGP 8.7.3 + Kotlin 2.0.21 (same toolchain as zo-voice/zai-widget). SDK `/opt/and
 ## Settings (v0.3.0+)
 
 `SettingsActivity` (full-screen, plain Views — no Compose, no XML layouts): backend radio
-cards (Zo / OpenAI-compatible) toggle section visibility; **Test** buttons do real
+cards (Zo / OpenAI-compatible / System One decision) toggle section visibility; **Test** buttons do real
 round-trips (Zo `GET /models/available` via `ZoApi.listModels`, OAI `GET {base}/models`);
 `Browse catalog` opens the searchable models.dev browser (picker filter/rows are pure
 `ModelsDev.filter`/`ModelsDev.rows` — unit-tested). MainActivity deep-links here on
@@ -76,3 +76,22 @@ delete especially (contract says moves only).
 - Docs live in-repo, not in the workspace: `docs/` is part of the repo, so a docs edit is
   a normal commit. Keep numbers in `guide.html` (test count, coverage table) in sync with
   `make coverage` output — the coverage table is hand-maintained and WILL drift otherwise.
+
+## v0.4 — System One decision backend (2026-10-18)
+
+Third `Planner` backend (`brain/DecisionPlanner.kt` + pure core `brain/DecisionModel.kt`)
+speaking the Jev-compatible System One API (TypeSafe Jev, Cloudflare Clef/Clef-flash on
+Workers AI, self-hosted Clef). Mapping: scan listing = request `state`; every file = one
+`choice` question (max 64 per request — Workers AI cap) over a shared vocabulary
+(existing dirs first, then canonical buckets by content, explicit `__keep__` last).
+Argmax probability >= user confidence floor and != `__keep__` and != current dir → move
+action (targets deduped with " (2)" suffixes); everything else is skipped by design.
+Response parser is envelope-tolerant (bare Jev `answers` or Workers AI
+`{result:{answers}}`). The resulting plan re-enters the normal PlanParser →
+PlanValidator → review checklist pipeline — MainActivity can't tell the backends apart.
+Settings: endpoint URL (full ai/run or /v1/decisions), API key (blank self-hosted),
+confidence floor %; Test = one `noul` round-trip. 10 unit tests in `DecisionModelTest`
+(vocabulary, batching, envelope parse, threshold/keep/dedupe, validator round-trip);
+DecisionModel at 97.4% lines, DecisionPlanner is the OkHttp boundary (untested like the
+other network paths). Refine is intentionally unsupported here (single-shot): the app
+raises "single-shot backend" instead of silently ignoring the refinement.

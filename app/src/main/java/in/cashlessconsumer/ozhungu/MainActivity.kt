@@ -1,5 +1,6 @@
 package `in`.cashlessconsumer.ozhungu
 
+import `in`.cashlessconsumer.ozhungu.brain.DecisionPlanner
 import `in`.cashlessconsumer.ozhungu.brain.ModelsDev
 import `in`.cashlessconsumer.ozhungu.brain.OaiPlanner
 import `in`.cashlessconsumer.ozhungu.brain.Planner
@@ -161,13 +162,20 @@ class MainActivity : Activity() {
 
     private fun refreshBackendLine() {
         loadedBackend = settings.backend
-        backendLine.text = if (settings.backend == "oai") {
-            val where = settings.oaiBaseUrl.ifBlank { "(no endpoint yet)" }
-            val what = settings.oaiModel.ifBlank { "(no model yet)" }
-            "Backend: OpenAI-compatible · $where · $what"
-        } else {
-            val what = settings.model.ifBlank { "default model" }
-            "Backend: Zo agent · $what"
+        backendLine.text = when (settings.backend) {
+            "oai" -> {
+                val where = settings.oaiBaseUrl.ifBlank { "(no endpoint yet)" }
+                val what = settings.oaiModel.ifBlank { "(no model yet)" }
+                "Backend: OpenAI-compatible · $where · $what"
+            }
+            "decision" -> {
+                val what = settings.dEndpoint.substringAfterLast("/").ifBlank { "(no endpoint yet)" }
+                "Backend: System One decision · $what · floor ${settings.dThreshold}%"
+            }
+            else -> {
+                val what = settings.model.ifBlank { "default model" }
+                "Backend: Zo agent · $what"
+            }
         }
     }
 
@@ -224,7 +232,7 @@ class MainActivity : Activity() {
 
     private fun doPlan() {
         val s = scan ?: run { toast("Scan first"); return }
-        val p = try { buildPlanner(fresh = true) } catch (e: IllegalStateException) { toast(e.message ?: ""); return }
+        val p = try { buildPlanner(fresh = true, scan = s) } catch (e: IllegalStateException) { toast(e.message ?: ""); return }
         val prompt = PromptBuilder.build(s)
         lastPrompt = prompt
         runPlan(p, prompt)
@@ -239,7 +247,7 @@ class MainActivity : Activity() {
     }
 
     /** Fresh=true starts a new session (new Zo conversation / empty local history). */
-    private fun buildPlanner(fresh: Boolean): Planner {
+    private fun buildPlanner(fresh: Boolean, scan: ScanResult? = null): Planner {
         val existing = planner
         if (!fresh && existing != null) return existing
         val p: Planner = when (settings.backend) {
@@ -247,6 +255,12 @@ class MainActivity : Activity() {
                 if (settings.oaiBaseUrl.isBlank() || settings.oaiModel.isBlank())
                     throw IllegalStateException("Pick an OpenAI-compatible provider and model (⚙)")
                 OaiPlanner(settings.oaiBaseUrl, settings.oaiKey, settings.oaiModel)
+            }
+            "decision" -> {
+                if (settings.dEndpoint.isBlank())
+                    throw IllegalStateException("Set the decision endpoint (⚙)")
+                DecisionPlanner(settings.dEndpoint, settings.dKey, settings.dThreshold,
+                    scan ?: throw IllegalStateException("Scan first"))
             }
             else -> {
                 if (settings.token.isBlank()) throw IllegalStateException("Set your Zo token (⚙)")
@@ -259,7 +273,11 @@ class MainActivity : Activity() {
 
     private fun runPlan(p: Planner, prompt: String) {
         setBusy(true)
-        status.text = if (settings.backend == "oai") "${settings.oaiModel} is thinking…" else "Zo is thinking…"
+        status.text = when (settings.backend) {
+            "oai" -> "${settings.oaiModel} is thinking…"
+            "decision" -> "Asking the decision model…"
+            else -> "Zo is thinking…"
+        }
         var streamed = StringBuilder()
         p.plan(prompt,
             onStatus = { s -> runOnUiThread { status.text = s ?: "Working…" } },

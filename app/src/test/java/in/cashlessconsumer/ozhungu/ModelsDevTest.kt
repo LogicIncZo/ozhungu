@@ -20,6 +20,8 @@ class ModelsDevTest {
         "models": {
           "zdr-model": {"id": "zdr-model", "name": "Zero Data Retention variant",
                         "description": "Zero data retention endpoint."},
+          "glm-5": {"id": "glm-5", "name": "GLM 5"},
+          "glm-6": {"id": "glm-6", "name": "GLM 6"},
           "plain": {"id": "plain", "name": "Plain"}
         }
       },
@@ -59,6 +61,32 @@ class ModelsDevTest {
         assertEquals("zdr-model", or.models.first().id)
         val lm = out.first { it.id == "lmstudio" }
         assertFalse(lm.zdr)
+    }
+    @Test
+    fun `filter matches provider id name and model ids only`() {
+        val provs = ModelsDev.parse(catalog())
+        assertEquals(3, ModelsDev.filter(provs, "").size)
+        assertEquals(listOf("openrouter"), ModelsDev.filter(provs, "openrouter").map { it.id })
+        assertEquals(listOf("lmstudio"), ModelsDev.filter(provs, "studio").map { it.id })
+        val byModel = ModelsDev.filter(provs, "glm")
+        assertEquals(listOf("openrouter"), byModel.map { it.id })
+        assertEquals(listOf("glm-5", "glm-6"), byModel[0].models.map { it.id })
+        assertTrue(ModelsDev.filter(provs, "nonexistent").isEmpty())
+    }
+
+    @Test
+    fun `picker rows interleave provider headers and model entries`() {
+        val rows = ModelsDev.rows(ModelsDev.filter(ModelsDev.parse(catalog()), "openrouter"))
+        assertEquals(ModelsDev.PickerRow.Kind.PROVIDER, rows[0].kind)
+        assertTrue(rows[0].zdr)
+        assertEquals("https://openrouter.ai/api/v1", rows[0].subtitle)
+        val models = rows.drop(1)
+        assertEquals(listOf("zdr-model", "glm-5", "glm-6", "plain"), models.map { it.title })
+        assertEquals(listOf(true, false, false, false), models.map { it.zdr })
+        models.forEach {
+            assertEquals(ModelsDev.PickerRow.Kind.MODEL, it.kind)
+            assertEquals(rows[0].provIdx, it.provIdx)
+        }
     }
 
     @Test
@@ -141,5 +169,4 @@ class OaiTranscriptTest {
         assertEquals("glm-5", body.getString("model"))
         assertEquals(true, body.getBoolean("stream"))
         assertEquals(2, body.getJSONArray("messages").length())
-    }
-}
+    }}

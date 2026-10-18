@@ -39,9 +39,11 @@ persisted tree grant — no `MANAGE_EXTERNAL_STORAGE`, no `All files access` pro
 
 ## Usage
 
-1. ⚙ — choose a backend: **Zo** (paste a Zo access token from Settings ▸ Advanced ▸ Access
-   Tokens, optional model override) or **OpenAI-compatible** (base URL, API key, model —
-   the models.dev picker fills both base URL and model; ★ ZDR-defaults first).
+1. ⚙ Settings — a full-screen settings UI: radio-card backend choice (Zo /
+   OpenAI-compatible), password-masked key fields with show/hide, **Test** buttons that
+   round-trip the endpoint (Zo lists your models; OAI does `GET {base}/models`), a
+   searchable in-place models.dev browser (★ ZDR-defaults first, provider-grouped), and
+   a model-list fetch for Zo. Saves back to EncryptedSharedPreferences.
 2. Pick folder — SAF tree picker (Downloads, internal storage root, SD card…).
 3. Scan — walks the tree (depth ≤ 4, ≤ 600 files, snippets for small text files).
 4. Ask Zo for a plan — streams; the plan lands as a checklist of

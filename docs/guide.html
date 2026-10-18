@@ -40,7 +40,7 @@
   <h2>First run</h2>
   <ol>
     <li><strong>Pick folder.</strong> Android's folder picker opens (<code>ACTION_OPEN_DOCUMENT_TREE</code>). Pick the folder you want organised — usually <code>Download</code>, <code>Documents</code> or <code>Pictures</code>. The grant is persisted, so it survives restarts.</li>
-    <li><strong>Set a backend</strong> with <em>⚙ Token / model</em> — a Zo access token, or an OpenAI-compatible base URL + key + model. See <a href="#backends">Backends</a>.</li>
+    <li><strong>Set a backend</strong> in the full-screen <em>⚙ Settings</em> screen (it opens automatically on first run): radio-card backend choice, then a Zo access token, or an OpenAI-compatible base URL + key + model, with <em>Test</em> buttons that round-trip the endpoint and an in-place models.dev browser. See <a href="#backends">Backends</a>.</li>
     <li><strong>Scan.</strong> The scan walks up to 4 levels deep and stops at 600 files. Progress shows in the status line; unreadable directories are counted, not fatal.</li>
     <li><strong>Ask Zo for a plan</strong> — optionally with a nudge in the text box, e.g. <em>"put invoices from March under Bills/2026"</em>.</li>
     <li><strong>Review.</strong> Valid rows are ticked by default; rejected rows are shown with the rule that killed them. Untick anything you don't want.</li>
@@ -66,11 +66,14 @@
       <tr><td>Model id</td><td>whatever the endpoint expects, e.g. <code>qwen3-coder:30b</code></td></tr>
     </tbody>
   </table>
-  <p>Requests go to <code>{base}/chat/completions</code> with <code>stream: true</code>, and deltas are parsed from SSE as they arrive.</p>
+  <p>Requests go to <code>{base}/chat/completions</code> with <code>stream: true</code>, and deltas are parsed from SSE as they arrive.</p>  <p>Requests go to <code>{base}/chat/completions</code> with <code>stream: true</code>, and deltas are parsed from SSE as they arrive.</p>
 
-  <h3>Picking a model from models.dev</h3>
-  <p>The <em>Pick model</em> button fetches <a href="https://models.dev/api.json">models.dev/api.json</a> (cached on disk for 24 hours) and offers a two-step picker:</p>
+  <p>The <em>Test</em> buttons do a real round-trip against the configured backend — Zo lists your available models, OpenAI-compatible endpoints get a <code>GET {base}/models</code> — and show the result inline, so bad tokens or wrong base URLs surface before you scan anything.</p>
+
+  <h3>Browsing the models.dev catalog</h3>
+  <p>The <em>Browse catalog</em> button in the OpenAI-compatible section fetches <a href="https://models.dev/api.json">models.dev/api.json</a> (cached on disk for 24 hours, in-memory after that) and opens a full-screen picker:</p>
   <ul>
+    <li>A search box filters across provider ids, names and model ids as you type; the list is grouped by provider, with provider headers clickable too (pick a header to fill just the base URL and type the model id yourself — useful for local servers that don't appear in the catalog).</li>
     <li>Only providers that publish an API base URL are listed, minus the SDKs whose endpoints aren't chat-completions-shaped.</li>
     <li>Providers whose models mention zero data retention are badged <strong>★</strong> and sorted to the top — up to 60 providers, 40 models each.</li>
     <li>Choosing a model fills the base URL and model id. The API key stays yours to paste.</li>

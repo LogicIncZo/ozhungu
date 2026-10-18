@@ -56,7 +56,7 @@ class MainActivity : Activity() {
     private lateinit var refineBox: EditText
     private lateinit var refineBtn: Button
     private lateinit var settingsBtn: Button
-    private lateinit var backendBtn: Button
+    private lateinit var backendLine: TextView
 
     private var rows: List<Row> = emptyList()
 
@@ -103,8 +103,11 @@ class MainActivity : Activity() {
         planBtn = button("3. Ask Zo for a plan") { doPlan() }
         applyBtn = button("4. Apply checked") { doApply() }
         undoBtn = button("Undo last apply") { doUndo() }
-        backendBtn = button("Backend: Zo") { toggleBackend() }
-        settingsBtn = button("⚙ Tokens / models / folder") { editSettings() }
+        settingsBtn = button("⚙ Settings — backend, keys, model") { startActivity(Intent(this, SettingsActivity::class.java)) }
+        backendLine = TextView(this).apply {
+            textSize = 13f
+            setTextColor(0xFF8b949e.toInt())
+        }
         refineBox = EditText(this).apply {
             hint = "Refine: e.g. put invoices from March under Bills/2026"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -124,7 +127,7 @@ class MainActivity : Activity() {
 
         root.addView(rootName)
         root.addView(status)
-        root.addView(backendBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(backendLine)
         root.addView(settingsBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(row1)
         root.addView(row2)
@@ -139,8 +142,33 @@ class MainActivity : Activity() {
             treeUri = Uri.parse(it)
             showRootName()
         }
-        if (settings.token.isBlank()) editSettings()
-        status.text = "Token and folder set? Then Scan → Ask Zo → Apply. Nothing moves until you tap Apply."
+        refreshBackendLine()
+        status.text = "Token and folder set? Then Scan → Plan → Apply. Nothing moves until you tap Apply."
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Settings edits land in EncryptedSharedPreferences; the stored values
+        // re-read through the same object — just drop any stale planner and
+        // refresh the label.
+        if (::backendLine.isInitialized) {
+            if (planner != null && loadedBackend != settings.backend) planner = null
+            refreshBackendLine()
+        }
+    }
+
+    private var loadedBackend: String = ""
+
+    private fun refreshBackendLine() {
+        loadedBackend = settings.backend
+        backendLine.text = if (settings.backend == "oai") {
+            val where = settings.oaiBaseUrl.ifBlank { "(no endpoint yet)" }
+            val what = settings.oaiModel.ifBlank { "(no model yet)" }
+            "Backend: OpenAI-compatible · $where · $what"
+        } else {
+            val what = settings.model.ifBlank { "default model" }
+            "Backend: Zo agent · $what"
+        }
     }
 
     private fun showRootName() {
@@ -253,11 +281,6 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun toggleBackend() {
-        settings.backend = if (settings.backend == "zo") "oai" else "zo"
-        planner = null
-        backendBtn.text = if (settings.backend == "zo") "Backend: Zo" else "Backend: OpenAI-compatible"
-    }
 
     private fun showPlan(plan: `in`.cashlessconsumer.ozhungu.plan.Plan) {
         val s = scan ?: return
@@ -331,100 +354,6 @@ class MainActivity : Activity() {
                 status.text = "Undone $undone, failed $failed"
                 undoBtn.isEnabled = false
                 doScanSilently()
-            }
-        }.start()
-    }
-
-    private fun editSettings() {
-        val ctx = this
-        val layout = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            val p = (16 * resources.displayMetrics.density).toInt()
-            setPadding(p, p, p, p)
-        }
-        val backendBtn = Button(ctx).apply {
-            text = "Backend: " + if (settings.backend == "oai") "OpenAI-compatible" else "Zo (/zo/ask)"
-            setOnClickListener {
-                val next = if (settings.backend == "oai") "zo" else "oai"
-                settings.backend = next
-                text = "Backend: " + if (next == "oai") "OpenAI-compatible" else "Zo (/zo/ask)"
-                toast("Backend: $next")
-            }
-        }
-        val tokenBox = EditText(ctx).apply {
-            hint = "Zo access token (Settings ▸ Advanced)"
-            setText(settings.token)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        val modelBox = EditText(ctx).apply {
-            hint = "Model (blank = API default)"
-            setText(settings.model)
-            inputType = InputType.TYPE_CLASS_TEXT
-        }
-        val oaiUrlBox = EditText(ctx).apply {
-            hint = "OpenAI-compat base URL (…/v1)"
-            setText(settings.oaiBaseUrl)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        }
-        val oaiKeyBox = EditText(ctx).apply {
-            hint = "OpenAI-compat API key"
-            setText(settings.oaiKey)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        val oaiModelBox = EditText(ctx).apply {
-            hint = "OpenAI-compat model id"
-            setText(settings.oaiModel)
-            inputType = InputType.TYPE_CLASS_TEXT
-        }
-        val pickBtn = Button(ctx).apply {
-            text = "Pick model from models.dev"
-            setOnClickListener { pickFromModelsDev(ctx) { oaiUrlBox.setText(it.baseUrl); oaiModelBox.setText(it.modelId) } }
-        }
-        listOf(backendBtn, tokenBox, modelBox, oaiUrlBox, oaiKeyBox, oaiModelBox, pickBtn).forEach { layout.addView(it) }
-        AlertDialog.Builder(ctx)
-            .setTitle("Settings")
-            .setView(layout)
-            .setPositiveButton("Save") { _, _ ->
-                settings.token = tokenBox.text.toString().trim()
-                settings.model = modelBox.text.toString().trim()
-                settings.oaiBaseUrl = oaiUrlBox.text.toString().trim().trimEnd('/')
-                settings.oaiKey = oaiKeyBox.text.toString().trim()
-                settings.oaiModel = oaiModelBox.text.toString().trim()
-                toast("Saved")
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    /** Fetches models.dev, filters OpenAI-compatible providers, ZDR-defaults first. */
-    private fun pickFromModelsDev(ctx: Context, onPick: (ModelsDev.Pick) -> Unit) {
-        status.text = "Fetching models.dev…"
-        Thread {
-            val res = ModelsDev.load(ctx)
-            runOnUiThread {
-                if (res.isFailure) {
-                    status.text = "models.dev fetch failed: ${(res.exceptionOrNull()?.message ?: "").take(120)}"
-                    return@runOnUiThread
-                }
-                val provs = res.getOrThrow()
-                val lines = provs.mapIndexed { i, pr ->
-                    (if (pr.zdr) "★ " else "") + "${pr.name}  (${pr.models.size} models)"
-                }.toTypedArray()
-                AlertDialog.Builder(ctx)
-                    .setTitle("Providers — ZDR-defaults (★) first")
-                    .setItems(lines) { _, w ->
-                        val pr = provs[w]
-                        val mLines = pr.models.map { "${it.id}${if (it.zdr) "  ★ZDR" else ""}" }.toTypedArray()
-                        AlertDialog.Builder(ctx)
-                            .setTitle("${pr.name} — models")
-                            .setItems(mLines) { _, m ->
-                                onPick(ModelsDev.Pick(baseUrl = pr.api, modelId = pr.models[m].id))
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
             }
         }.start()
     }

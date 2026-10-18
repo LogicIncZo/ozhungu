@@ -100,4 +100,54 @@ object ModelsDev {
         return out.sortedWith(compareByDescending<CatProvider> { it.zdr }.thenBy { it.name.lowercase() })
             .take(MAX_PROVIDERS)
     }
+
+    // ── Picker model (pure, unit-tested) ──────────────────────────────────
+
+    /** One row of the provider/model picker: a provider header or a model entry. */
+    data class PickerRow(
+        val kind: Kind,
+        val title: String,
+        val subtitle: String,
+        val zdr: Boolean,
+        val provIdx: Int,
+        val modelIdx: Int,
+    ) {
+        enum class Kind { PROVIDER, MODEL }
+    }
+
+    /** Case-insensitive substring filter across provider id/name and model ids. */
+    fun filter(provs: List<CatProvider>, query: String): List<CatProvider> {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return provs
+        return provs.mapNotNull { p ->
+            val provHit = p.id.lowercase().contains(q) || p.name.lowercase().contains(q)
+            val hitModels = p.models.filter { it.id.lowercase().contains(q) }
+            when {
+                provHit -> p
+                hitModels.isNotEmpty() -> p.copy(models = hitModels)
+                else -> null
+            }
+        }
+    }
+
+    /** Flattens providers into picker rows: one PROVIDER header, then its MODEL rows. */
+    fun rows(provs: List<CatProvider>): List<PickerRow> {
+        val out = ArrayList<PickerRow>()
+        provs.forEachIndexed { pi, p ->
+            out.add(PickerRow(PickerRow.Kind.PROVIDER, p.name, p.api, p.zdr, pi, -1))
+            p.models.forEachIndexed { mi, m ->
+                out.add(PickerRow(PickerRow.Kind.MODEL, m.id, if (m.zdr) "ZDR-flagged in catalog text" else "", m.zdr, pi, mi))
+            }
+        }
+        return out
+    }
+
+    @Volatile
+    private var sessionCache: List<CatProvider>? = null
+
+    /** Disk-cached load, with a process-lifetime memo on top for the picker. */
+    fun loadCached(context: Context): Result<List<CatProvider>> {
+        sessionCache?.let { return Result.success(it) }
+        return load(context).onSuccess { sessionCache = it }
+    }
 }

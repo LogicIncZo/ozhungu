@@ -113,3 +113,18 @@ Invariants:
   — the invalid rows are appended after and are never checkable. Don't reorder rows.
 - `setBusy` gates plan/apply/undo; the bottom-bar apply label always recomputes from rows.
 - Do not add Compose, appcompat, or Material Components. No XML layouts.
+
+## v0.6 — OpenRouter System One + real folder browsing (2026-10-18)
+
+- Decision backend has two flavors (`settings.dFlavor`): `clef` (raw Jev-compatible endpoint,
+  e.g. Cloudflare Workers AI) and `openrouter` (`DecisionPlanner.OPENROUTER_URL` =
+  `https://openrouter.ai/api/alpha/decisions`, model field required, Bearer key required).
+- OpenRouter System One model list: `GET /api/v1/models?output_modalities=decisions` —
+  PUBLIC (no key), ~27 models; default `DecisionPlanner.DEFAULT_OR_MODEL` = `~typesafe/jev-latest`.
+  OR answers use `confidence` (not `probabilities`) — `DecisionModel.parseAnswers` accepts both.
+- Folder visibility fix: Browse tab now has an "All folders" section (recursive dirs from
+  `scan.dirPaths`, per-folder counts) with drilldown (`folderFilter` + breadcrumb); Clean tab
+  has a "Move into" row opening a checkbox folder sheet → `pickedFolders`/`allowAutoFolders`
+  → `DecisionModel.folders(scan, picked, allowAuto)` (picked first; allowAuto=false limits
+  vocabulary to picked + KEEP). LLM backends get the picks appended to the prompt.
+- Docs to update together with code: README Limits, docs/index hero badge, docs/guide backends.

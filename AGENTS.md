@@ -56,3 +56,14 @@ delete especially (contract says moves only).
 - `OaiPlanner.Sse.delta(line)` is the unit-tested SSE parser; `[DONE]` → null, non-content
   lines → null. System prompt = `PromptBuilder.SYSTEM_RULES` (made public in v0.2) so both
   backends enforce the identical plan contract.
+
+## Docs site (2026-10-18)
+
+- Live: https://logicinczo.github.io/ozhungu/ (`index.html`) + `/guide.html`.
+- Static, zero-build, hand-written HTML + `docs/style.css` (same shell as the zai-usage
+  docs site). Served by **legacy GitHub Pages from `main` `/docs`** — no Pages workflow.
+  To change a page, edit the file, commit, push; the `pages-build-deployment` workflow
+  rebuilds in ~40 s. Verify with `curl -o /dev/null -w "%{http_code}"`.
+- Docs live in-repo, not in the workspace: `docs/` is part of the repo, so a docs edit is
+  a normal commit. Keep numbers in `guide.html` (test count, coverage table) in sync with
+  `make coverage` output — the coverage table is hand-maintained and WILL drift otherwise.

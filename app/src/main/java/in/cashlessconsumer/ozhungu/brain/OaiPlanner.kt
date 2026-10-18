@@ -24,7 +24,7 @@ class OaiPlanner(
     private val model: String,
 ) : Planner {
 
-    private val messages = JSONArray()
+    private val transcript = Transcript(SYSTEM_RULES)
     private var call: Call? = null
 
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -40,15 +40,8 @@ class OaiPlanner(
         onDone: (String?) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        if (messages.length() == 0) {
-            messages.put(JSONObject().put("role", "system").put("content", SYSTEM_RULES))
-        }
-        messages.put(JSONObject().put("role", "user").put("content", prompt))
-        val body = JSONObject()
-            .put("model", model)
-            .put("stream", true)
-            .put("messages", messages)
-            .toString()
+        transcript.addUser(prompt)
+        val body = transcript.requestBody(model)
             .toRequestBody("application/json; charset=utf-8".toMediaType())
         val url = baseUrl.trimEnd('/') + "/chat/completions"
         val req = Request.Builder()
@@ -84,9 +77,7 @@ class OaiPlanner(
                         onError(IOException("empty completion"))
                         return
                     }
-                    messages.put(JSONObject().put("role", "assistant").put("content", text))
-                    // Keep the transcript bounded: system + last user + last assistant.
-                    while (messages.length() > 3) messages.remove(1)
+                    transcript.addAssistant(text)
                     onDone(null)
                 }
             }
@@ -96,6 +87,44 @@ class OaiPlanner(
     override fun cancel() {
         call?.cancel()
         call = null
+    }
+
+    /**
+     * The chat transcript, local because /chat/completions is stateless. Kept bounded:
+     * system + last user + last assistant (older turns drop as refinements arrive).
+     */
+    class Transcript(private val systemRules: String) {
+        val messages = JSONArray()
+        private var seeded = false
+
+        fun addUser(content: String) {
+            seedIfNeeded()
+            messages.put(JSONObject().put("role", "user").put("content", content))
+            trim()
+        }
+
+        fun addAssistant(content: String) {
+            messages.put(JSONObject().put("role", "assistant").put("content", content))
+            trim()
+        }
+
+        /** Keeps system + the two most recent turns, so the context stays bounded. */
+        private fun trim() {
+            while (messages.length() > 3) messages.remove(1)
+        }
+
+        fun requestBody(model: String): String =
+            JSONObject()
+                .put("model", model)
+                .put("stream", true)
+                .put("messages", messages)
+                .toString()
+
+        private fun seedIfNeeded() {
+            if (seeded) return
+            seeded = true
+            messages.put(JSONObject().put("role", "system").put("content", systemRules))
+        }
     }
 
     /** Lines of an OpenAI SSE stream to plan-delta strings; null = not a content line. */

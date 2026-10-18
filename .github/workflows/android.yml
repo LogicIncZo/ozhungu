@@ -33,7 +33,16 @@ jobs:
       - name: Build debug APK
         working-directory: ozhungu
         run: ./gradlew assembleDebug --stacktrace
+      - name: Coverage report
+        working-directory: ozhungu
+        run: |
+          ./gradlew createDebugUnitTestCoverageReport --stacktrace
+          python3 scripts/coverage_summary.py
       - uses: actions/upload-artifact@v4
         with:
           name: ozhungu-debug-apk
           path: ozhungu/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ozhungu-coverage-report
+          path: ozhungu/app/build/reports/coverage/

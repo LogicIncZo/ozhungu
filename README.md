@@ -56,6 +56,18 @@ persisted tree grant — no `MANAGE_EXTERNAL_STORAGE`, no `All files access` pro
 - A stale scan (files changed elsewhere mid-session) fails those rows individually, not the batch.
 - Providers that refuse `moveDocument`/`renameDocument` (rare on API 26+) report a per-row failure.
 
+## Tests & coverage
+
+JVM-only tests, no emulator needed: `make test` (19 tests). Coverage via AGP unit-test
+coverage (JaCoCo): `make coverage` prints a per-class table (scripts/coverage_summary.py).
+
+The JVM-testable core — plan parser, validator, prompt builder, plan grammar, journal
+codec, models.dev catalog parse, OAI transcript/SSE — sits at 96–100% line coverage.
+The uncovered remainder is Android-instrumentation code by design: MainActivity, SAF
+(SafFs/Scanner/Executor), encrypted Settings, and the OkHttp enqueue paths. Those need
+Robolectric or a device; the project deliberately keeps CI emulator-free, so they are
+verified on-device (SAF failures surface per-row in the journal, never as silent drops).
+
 ## Build
 
 Local SDK at `/opt/android-sdk` (`local.properties`, gitignored). `make verify` =

@@ -1,4 +1,4 @@
-.PHONY: build test lint verify apk clean
+.PHONY: build test lint verify coverage apk clean
 
 build:
 	./gradlew assembleDebug
@@ -8,6 +8,10 @@ test:
 
 lint:
 	./gradlew lintDebug
+
+coverage: test
+	./gradlew createDebugUnitTestCoverageReport
+	@python3 scripts/coverage_summary.py || true
 
 verify: test lint build
 

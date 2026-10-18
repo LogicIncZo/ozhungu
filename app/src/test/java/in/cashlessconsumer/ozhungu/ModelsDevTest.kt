@@ -104,3 +104,42 @@ class OaiSseTest {
         assertNull(OaiPlanner.Sse.delta("data: " + frame("")))
     }
 }
+
+class OaiTranscriptTest {
+
+    private fun roles(t: OaiPlanner.Transcript): List<String> {
+        val out = ArrayList<String>()
+        for (i in 0 until t.messages.length()) out.add(t.messages.getJSONObject(i).getString("role"))
+        return out
+    }
+
+    private fun contents(t: OaiPlanner.Transcript): List<String> {
+        val out = ArrayList<String>()
+        for (i in 0 until t.messages.length()) out.add(t.messages.getJSONObject(i).getString("content"))
+        return out
+    }
+
+    @Test
+    fun `seeds system once then keeps bounded window`() {
+        val t = OaiPlanner.Transcript("RULES")
+        t.addUser("plan this folder")
+        t.addAssistant("{\"plan\":{}}")
+        assertEquals(listOf("system", "user", "assistant"), roles(t))
+
+        // Refinement: user turn appended, old user turn drops, system stays.
+        t.addUser("put invoices under Bills")
+        t.addAssistant("{\"plan\":{}}")
+        assertEquals(listOf("system", "user", "assistant"), roles(t))
+        assertEquals("put invoices under Bills", contents(t)[1])
+    }
+
+    @Test
+    fun `request body carries model, stream and the transcript`() {
+        val t = OaiPlanner.Transcript("RULES")
+        t.addUser("p")
+        val body = JSONObject(t.requestBody("glm-5"))
+        assertEquals("glm-5", body.getString("model"))
+        assertEquals(true, body.getBoolean("stream"))
+        assertEquals(2, body.getJSONArray("messages").length())
+    }
+}

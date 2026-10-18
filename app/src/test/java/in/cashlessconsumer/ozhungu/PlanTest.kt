@@ -146,4 +146,25 @@ class PlanTest {
         assertFalse(prompt.contains("f350.txt"))
         assertTrue(prompt.contains("f299.txt"))
     }
+    @Test
+    fun `parser tolerates prose fences and non-object action rows`() {
+        val noisy = "Sure! Here is the plan:\n```json\n{\"plan\":{\"folders\":[\"A\"],\"actions\":[{\"op\":\"move\",\"from\":\"bill.pdf\",\"to\":\"A/bill.pdf\",\"reason\":\"r\"},\"garbage\",null]}}\n```\nThanks."
+        val p = PlanParser.parse(noisy)
+        assertEquals(listOf("A"), p.folders)
+        assertEquals(1, p.actions.size)
+        assertEquals("A/bill.pdf", p.actions[0].to)
+
+        // A string containing an escaped quote and a brace must not confuse the extractor.
+        val escaped = "{\"plan\":{\"folders\":[],\"actions\":[{\"op\":\"move\",\"from\":\"a\\\"{.txt\",\"to\":\"B/a\\\"{.txt\",\"reason\":\"r\"}]}}"
+        val p2 = PlanParser.parse(PlanParser.extractJsonObject(escaped)!!)
+        assertEquals("B/a\"{.txt", p2.actions[0].to)
+    }
+
+    @Test
+    fun `validator rejects ops other than move and rename`() {
+        val plan = Plan(emptyList(), listOf(PlanAction("copy", "bill.pdf", "Bills/bill.pdf", "copy op")))
+        val v = PlanValidator.validate(plan, scan())
+        assertEquals(0, v.valid.size)
+        assertTrue(v.invalid[0].error.contains("op"))
+    }
 }

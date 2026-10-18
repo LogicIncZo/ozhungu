@@ -17,6 +17,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // JaCoCo instrumentation for JVM unit tests; report via
+            // `./gradlew createDebugUnitTestCoverageReport` (make coverage).
+            enableUnitTestCoverage = true
+        }
         release {
             isMinifyEnabled = false
         }

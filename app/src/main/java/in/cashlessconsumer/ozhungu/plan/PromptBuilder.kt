@@ -52,6 +52,3 @@ object PromptBuilder {
         "Send the complete updated plan JSON now, same contract as before. " +
             "Updated request: ${request.trim()}. $conversationContext"
 }
-
-/** Small helper: caps a string for prompts. */
-internal fun String.cap(n: Int): String = if (length <= n) this else take(n)

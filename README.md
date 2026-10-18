@@ -4,6 +4,8 @@ An agentic Android file organizer: pick a folder, scan it, ask the [Zo agent](ht
 for a move/rename plan, review every line, apply only what you approve. Nothing is deleted;
 nothing moves until you tap **Apply**; every applied step is journaled and reversible.
 
+**Docs site:** https://logicinczo.github.io/ozhungu/ · [full guide](https://logicinczo.github.io/ozhungu/guide.html)
+
 Part of the Zo ecosystem — talks to the same `/zo/ask` API as zo-voice, via the shared
 [zo-kotlin](https://github.com/LogicIncZo/zo-kotlin) SDK (`dev.zocomputer:ask`, consumed from
 source when `../zo-kotlin` is checked out next to this repo, Maven artifact otherwise).
@@ -58,7 +60,7 @@ persisted tree grant — no `MANAGE_EXTERNAL_STORAGE`, no `All files access` pro
 
 ## Tests & coverage
 
-JVM-only tests, no emulator needed: `make test` (19 tests). Coverage via AGP unit-test
+JVM-only tests, no emulator needed: `make test` (29 tests). Coverage via AGP unit-test
 coverage (JaCoCo): `make coverage` prints a per-class table (scripts/coverage_summary.py).
 
 The JVM-testable core — plan parser, validator, prompt builder, plan grammar, journal

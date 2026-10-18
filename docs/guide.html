@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ozhungu — Guide</title>
+<meta name="description" content="Setup, plan contract, guardrail rules, journal/undo, architecture and troubleshooting for the Ozhungu agentic Android file organizer.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="hero small">
+  <div class="wrap">
+    <div class="prompt">$ ozhungu guide</div>
+    <h1>Ozhungu — Guide</h1>
+    <p class="meta">Setup, the plan contract, guardrails, undo, architecture, troubleshooting.</p>
+    <div class="cta">
+      <a class="btn ghost" href="index.html">← Overview</a>
+      <a class="btn ghost" href="https://github.com/LogicIncZo/ozhungu">Source</a>
+      <a class="btn" href="https://github.com/LogicIncZo/ozhungu/releases/latest">Download APK</a>
+    </div>
+  </div>
+</header>
+
+<nav class="sub wrap">
+  <a href="#firstrun">First run</a>
+  <a href="#backends">Backends</a>
+  <a href="#contract">Plan contract</a>
+  <a href="#rules">Guardrail rules</a>
+  <a href="#journal">Journal &amp; undo</a>
+  <a href="#arch">Architecture</a>
+  <a href="#tests">Tests &amp; coverage</a>
+  <a href="#privacy">Privacy / egress</a>
+  <a href="#trouble">Troubleshooting</a>
+  <a href="#roadmap">Roadmap</a>
+</nav>
+
+<main class="wrap">
+
+<section id="firstrun">
+  <h2>First run</h2>
+  <ol>
+    <li><strong>Pick folder.</strong> Android's folder picker opens (<code>ACTION_OPEN_DOCUMENT_TREE</code>). Pick the folder you want organised — usually <code>Download</code>, <code>Documents</code> or <code>Pictures</code>. The grant is persisted, so it survives restarts.</li>
+    <li><strong>Set a backend</strong> with <em>⚙ Token / model</em> — a Zo access token, or an OpenAI-compatible base URL + key + model. See <a href="#backends">Backends</a>.</li>
+    <li><strong>Scan.</strong> The scan walks up to 4 levels deep and stops at 600 files. Progress shows in the status line; unreadable directories are counted, not fatal.</li>
+    <li><strong>Ask Zo for a plan</strong> — optionally with a nudge in the text box, e.g. <em>"put invoices from March under Bills/2026"</em>.</li>
+    <li><strong>Review.</strong> Valid rows are ticked by default; rejected rows are shown with the rule that killed them. Untick anything you don't want.</li>
+    <li><strong>Apply checked</strong>, then <strong>Undo last apply</strong> if you don't like the result.</li>
+  </ol>
+  <div class="note">Refinement works as a conversation: with a plan on screen, type "no — keep the photos where they are and only sort the PDFs" into the same box and ask again. With the Zo backend the server holds the thread; with an OpenAI-compatible backend the app keeps a local transcript (system + last two turns) in memory only.</div>
+</section>
+
+<section id="backends">
+  <h2>Backends</h2>
+
+  <h3>Zo (<code>/zo/ask</code>) — default</h3>
+  <p>Create an access token in the Zo app under <em>Settings ▸ Advanced ▸ Access Tokens</em>, then paste it into <em>⚙ Token / model</em>. Leave the model field empty to use the account default, or name one explicitly (e.g. a DeepSeek or GLM model id) to keep plans cheap and fast.</p>
+  <p>Transport is streaming SSE through the <a href="https://github.com/LogicIncZo/zo-kotlin">zo-kotlin</a> SDK (<code>dev.zocomputer:ask</code>), consumed as a composite build. Continuity is server-side, which is why refinements don't resend the folder listing.</p>
+
+  <h3>Any OpenAI-compatible endpoint</h3>
+  <p>In <em>⚙ Token / model</em>, switch the backend and fill in:</p>
+  <table>
+    <thead><tr><th>Field</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td>Base URL</td><td><code>https://openrouter.ai/api/v1</code> · <code>https://api.deepseek.com/v1</code> · <code>http://192.168.1.20:11434/v1</code> (Ollama on your LAN)</td></tr>
+      <tr><td>API key</td><td>stored in <code>EncryptedSharedPreferences</code>; blank for local servers that don't check</td></tr>
+      <tr><td>Model id</td><td>whatever the endpoint expects, e.g. <code>qwen3-coder:30b</code></td></tr>
+    </tbody>
+  </table>
+  <p>Requests go to <code>{base}/chat/completions</code> with <code>stream: true</code>, and deltas are parsed from SSE as they arrive.</p>
+
+  <h3>Picking a model from models.dev</h3>
+  <p>The <em>Pick model</em> button fetches <a href="https://models.dev/api.json">models.dev/api.json</a> (cached on disk for 24 hours) and offers a two-step picker:</p>
+  <ul>
+    <li>Only providers that publish an API base URL are listed, minus the SDKs whose endpoints aren't chat-completions-shaped.</li>
+    <li>Providers whose models mention zero data retention are badged <strong>★</strong> and sorted to the top — up to 60 providers, 40 models each.</li>
+    <li>Choosing a model fills the base URL and model id. The API key stays yours to paste.</li>
+  </ul>
+  <div class="warnbox"><strong>Read the badge as a hint.</strong> It's a text match over models.dev metadata, not a contractual claim about the provider's retention policy. Verify before trusting it with anything sensitive.</div>
+</section>
+
+<section id="contract">
+  <h2>The plan contract</h2>
+  <p>The model is asked to reply with one JSON object and nothing else:</p>
+  <pre><code>{
+  "plan": {
+    "folders": ["Bills/2026", "Photos/Trips"],
+    "actions": [
+      { "op": "move",   "from": "IMG_20240101_900.jpg", "to": "Photos/Trips/IMG_20240101_900.jpg", "reason": "dated camera file" },
+      { "op": "rename", "from": "scan0043.pdf",         "to": "Receipts/electricity-2026-03.pdf", "reason": "receipt scan" }
+    ]
+  }
+}</code></pre>
+  <p>Rules the model is told, and that the validator then enforces regardless:</p>
+  <ul>
+    <li><code>op</code> is <code>move</code> or <code>rename</code> — nothing else exists.</li>
+    <li>Every path is relative to the picked folder, no leading <code>/</code>, no <code>..</code>.</li>
+    <li><code>from</code> must be a file that appeared in the scan.</li>
+    <li>Target folders may be new; the executor creates them.</li>
+    <li>Every action carries a one-line reason, which is shown in the review list.</li>
+  </ul>
+  <p>The parser is defensive: it extracts the first balanced JSON object from the reply, so a chatty model that wraps the plan in prose or a fenced code block still works.</p>
+</section>
+
+<section id="rules">
+  <h2>Guardrail rules</h2>
+  <p>These run locally, offline, after the model has spoken and before anything touches storage. A row failing any rule is marked rejected and cannot be applied:</p>
+  <table>
+    <thead><tr><th>Rule</th><th>Rejection message</th></tr></thead>
+    <tbody>
+      <tr><td>Only move/rename</td><td><code>unsupported op '…'</code></td></tr>
+      <tr><td>Path stays inside the root</td><td><code>from/to must be relative and stay inside the folder ('..' or absolute paths rejected)</code></td></tr>
+      <tr><td>Source came from the scan</td><td><code>from '…' was not in the scan</code></td></tr>
+      <tr><td>No self-move</td><td><code>to equals from</code></td></tr>
+      <tr><td>No overwrite of a scanned file</td><td><code>to would overwrite scanned file '…'</code></td></tr>
+      <tr><td>Target isn't an existing folder</td><td><code>to is an existing folder ('…')</code></td></tr>
+      <tr><td>No duplicate targets</td><td><code>to duplicates an earlier action's target</code></td></tr>
+      <tr><td>No chaining</td><td><code>to duplicates an earlier action's target</code> / parent checks catch action→action feeds</td></tr>
+      <tr><td>Parent must not be a file</td><td><code>to's parent is a file ('…')</code></td></tr>
+      <tr><td>Non-empty file name</td><td><code>to has an empty file name</code></td></tr>
+    </tbody>
+  </table>
+  <p>The validator is pure Kotlin with no Android dependencies, which is why it's one of the most heavily tested parts of the codebase.</p>
+</section>
+
+<section id="journal">
+  <h2>Journal &amp; undo</h2>
+  <p>Every applied action is recorded — source, destination, and the URI the move produced — and written to <code>last_journal.json</code> in the app's private files directory. <strong>Undo last apply</strong> replays the journal in reverse:</p>
+  <ol>
+    <li>Move the file back to where it came from.</li>
+    <li>If the original name differed (a rename), rename it back.</li>
+    <li>Report per-row: how many were undone, how many failed.</li>
+  </ol>
+  <p>The journal is one batch deep — a new apply replaces it. Directories created by the plan are left in place; they're empty and harmless, and deleting them is a delete operation the app deliberately doesn't have.</p>
+</section>
+
+<section id="arch">
+  <h2>Architecture</h2>
+  <div class="pipe">MainActivity          thin UI: picker, buttons, review list, status
+├─ scan/Scanner        SAF tree walk → ScanResult(entries, uriByPath, dirPaths)
+├─ plan/PromptBuilder  builds the system prompt + capped folder listing
+├─ plan/PlanParser     balanced-JSON extraction → Plan(folders, actions)
+├─ plan/PlanValidator  the guardrail table above → ValidatedPlan(valid, invalid)
+├─ brain/Planner       interface: plan(prompt, scan) / cancel()
+│   ├─ brain/ZoPlanner     /zo/ask via zo-kotlin, server-side continuity
+│   ├─ brain/OaiPlanner    /chat/completions, SSE, local Transcript (testable seam)
+│   └─ brain/ModelsDev     provider catalog fetch + filter + 24 h cache
+├─ exec/Executor       ensurePath → moveDocument → renameDocument; undo()
+├─ exec/Journal        JSON codec for the undo batch
+└─ saf/SafFs           DocumentsContract wrapper: children, ensurePath, move, rename</div>
+  <p class="dim">The seam that matters: everything above <code>brain/</code> is provider-agnostic, and everything below <code>exec/</code> is model-agnostic. Neither knows about the other.</p>
+</section>
+
+<section id="tests">
+  <h2>Tests &amp; coverage</h2>
+  <pre><code>make test       # 29 JVM unit tests, no emulator
+make lint       # Android lint
+make coverage   # JaCoCo per-class line table (scripts/coverage_summary.py)
+make verify     # test + lint + assembleDebug</code></pre>
+  <table>
+    <thead><tr><th>Layer</th><th>Line coverage</th></tr></thead>
+    <tbody>
+      <tr><td>PlanParser</td><td class="ok">96.1%</td></tr>
+      <tr><td>PlanValidator</td><td class="ok">97.1%</td></tr>
+      <tr><td>PromptBuilder</td><td class="ok">94.1%</td></tr>
+      <tr><td>OaiPlanner.Sse / Transcript, JournalCodec, plan grammar</td><td class="ok">100%</td></tr>
+      <tr><td>ModelsDev catalog parse (network + cache paths uncovered)</td><td class="ok">64.3%</td></tr>
+      <tr><td>MainActivity, SafFs, Scanner, Executor, Settings, OkHttp paths</td><td class="warn">Android-instrumentation boundary — untested by design</td></tr>
+    </tbody>
+  </table>
+  <p>CI runs tests + lint and publishes a debug APK plus the JaCoCo report as artifacts on every push. The honest number for the whole app is 26.4% of lines — the tested quarter is the quarter that decides what happens to your files, and the untested three-quarters is UI wiring and SAF plumbing that needs an emulator or device to exercise properly.</p>
+</section>
+
+<section id="privacy">
+  <h2>Privacy / egress</h2>
+  <p>One thing leaves the device: the folder listing, sent to whichever backend you configured, at the moment you press <em>Ask</em>.</p>
+  <table>
+    <thead><tr><th>Leaves the device</th><th>Stays on the device</th></tr></thead>
+    <tbody>
+      <tr><td>File names, sizes, modified dates</td><td>File contents of anything large or binary</td></tr>
+      <tr><td>Up to 1200 characters of small text files (snippets help the model tell invoices from notes)</td><td>Anything outside the folder you picked</td></tr>
+      <tr><td>Your typed nudge, if any</td><td>API keys — <code>EncryptedSharedPreferences</code>, and only to the endpoint you set</td></tr>
+      <tr><td>—</td><td>The journal, and every decision the validator makes</td></tr>
+    </tbody>
+  </table>
+  <p>If a folder's <em>names alone</em> are sensitive to you, use a local endpoint (Ollama/LM Studio on your LAN via the OpenAI-compatible backend) or don't point Ozhungu at that folder. There is no telemetry, no analytics, no crash reporting.</p>
+</section>
+
+<section id="trouble">
+  <h2>Troubleshooting</h2>
+  <table>
+    <thead><tr><th>Symptom</th><th>Cause / fix</th></tr></thead>
+    <tbody>
+      <tr><td>"Scan first"</td><td>No folder grant yet, or the grant was revoked. Re-pick the folder.</td></tr>
+      <tr><td>Scan stops around 600 files</td><td>By design — the cap keeps prompts (and bills) sane. Point it at a subfolder.</td></tr>
+      <tr><td>Expected files missing</td><td>They're probably in <code>/Android/data</code>, <code>/Android/obb</code>, a dot-directory, or deeper than 4 levels. All four are skipped.</td></tr>
+      <tr><td>"Plan parse failed"</td><td>The backend replied with no JSON object. Usually a small or over-chatty model. Try a stronger model id, or the Zo backend.</td></tr>
+      <tr><td>Everything rejected</td><td>Read the per-row reasons — most often the model invented paths that weren't in the scan. Refine the prompt, or re-scan.</td></tr>
+      <tr><td>"Apply failed: …"</td><td>The document provider refused the operation, or the folder moved. Re-scan; per-row failures are reported, not fatal.</td></tr>
+      <tr><td>401 / 403 from the endpoint</td><td>Check base URL includes the API version path (<code>/v1</code>) and that the key is for that provider.</td></tr>
+      <tr><td>Nothing listed in the model picker</td><td>models.dev unreachable, or the 24 h cache is empty and the fetch failed. Retry; local endpoints don't need the picker at all.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="roadmap">
+  <h2>Roadmap</h2>
+  <ul>
+    <li><strong>Duplicate detection</strong> — hash-based, with a review step that still refuses to delete.</li>
+    <li><strong>Instrumented tests</strong> — an emulator suite for SAF operations and the executor, closing the coverage gap above.</li>
+    <li><strong>Shizuku integration</strong> — opt-in reach into <code>/Android/media</code> and friends, without requesting All files access.</li>
+    <li><strong>Rules mode</strong> — deterministic filename-pattern rules for the boring 80%, model only for the ambiguous rest.</li>
+    <li><strong>Plan diffs</strong> — show what a refinement changed instead of re-listing everything.</li>
+  </ul>
+  <p class="dim">Nothing on this list adds delete. If you want that, you want a different app.</p>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>GPL-3.0-or-later · <a href="https://github.com/LogicIncZo/ozhungu">LogicIncZo/ozhungu</a> · <a href="index.html">Overview</a> · <a href="https://github.com/LogicIncZo/ozhungu/blob/main/README.md">README</a></p>
+  </div>
+</footer>
+</body>
+</html>

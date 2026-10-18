@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ozhungu — agentic file organizer for Android</title>
+<meta name="description" content="Ozhungu (ஒழுங்கு): point it at a folder, let a model propose a move/rename plan, review it, apply it — with local guardrails and one-tap undo.">
+<meta property="og:title" content="Ozhungu — agentic file organizer for Android">
+<meta property="og:description" content="Point it at a folder. A model proposes. Local guardrails decide. You approve. Undo is one tap.">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <div class="prompt">$ ozhungu --folder Download --backend zo</div>
+    <h1>Ozhungu <span class="ta">ஒழுங்கு</span></h1>
+    <p class="tagline">An Android file organizer where a model proposes and <em>you</em> decide. Nothing moves until you tick it and press Apply — and Undo is one tap.</p>
+    <p class="meta">v0.2.1 · SAF-native (no All files access) · Zo or any OpenAI-compatible model · GPL-3.0</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/LogicIncZo/ozhungu/releases/latest">Download APK</a>
+      <a class="btn ghost" href="guide.html">Guide</a>
+      <a class="btn ghost" href="https://github.com/LogicIncZo/ozhungu">Source</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section>
+  <h2>Why this exists</h2>
+  <p>Android file managers are good at showing you files and bad at <em>deciding</em> what to do with them. Cloud "smart" organizers decide for you and upload your data to do it. Ozhungu takes the third path: let a model do the tedious part — reading the pile and proposing a structure — while the phone keeps every decision local, reversible, and visible.</p>
+</section>
+
+<section>
+  <h2>The loop</h2>
+  <div class="pipe">pick folder  →  scan (SAF, ≤600 files, 4 levels)  →  model proposes a plan
+                                                                    ↓
+     undo last apply  ←  apply ticked rows  ←  local guardrails validate  ←──┘</div>
+  <ol class="endpoints">
+    <li><strong>Scan</strong> — a real directory walk through Android's Storage Access Framework. Names, sizes, dates, and small text snippets only. Never a full upload of your files.</li>
+    <li><strong>Propose</strong> — the model returns one JSON plan of <code>move</code>/<code>rename</code> actions, each with a reason. Or a list of new folders to create.</li>
+    <li><strong>Validate</strong> — a local, offline, pure-Kotlin validator rejects anything that escapes the folder, overwrites a file, chains onto another action's output, or isn't a move. You see every rejection with its reason.</li>
+    <li><strong>Apply</strong> — only the rows you ticked, each one journaled.</li>
+    <li><strong>Undo</strong> — the whole batch in reverse, newest first, with per-row reporting.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>What it will never do</h2>
+  <table>
+    <thead><tr><th>Never</th><th>Because</th></tr></thead>
+    <tbody>
+      <tr><td>Delete or trash anything</td><td>Moves and renames only. The vocabulary has no third verb.</td></tr>
+      <tr><td>Move a file outside the folder you picked</td><td><code>..</code> and absolute paths are rejected before the model's plan is even shown to you.</td></tr>
+      <tr><td>Overwrite an existing file</td><td>Targets colliding with anything from the scan are rejected as rows.</td></tr>
+      <tr><td>Touch your files without a tap</td><td>Nothing is applied automatically — there is no background organiser mode.</td></tr>
+      <tr><td>Ask for All files access</td><td>Storage Access Framework only, so the app sees exactly the folder you granted.</td></tr>
+      <tr><td>Phone home</td><td>No telemetry, no analytics, no crash reporter. One network call per plan, to the backend you configured.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Bring your own model</h2>
+  <p>Two backends, same plan contract:</p>
+  <table>
+    <thead><tr><th>Backend</th><th>Endpoint</th><th>Continuity</th></tr></thead>
+    <tbody>
+      <tr><td>Zo</td><td><code>/zo/ask</code> (SSE, via the zo-kotlin SDK)</td><td>Server-side conversation — refinements don't resend the listing</td></tr>
+      <tr><td>OpenAI-compatible</td><td><code>{base}/chat/completions</code> — OpenRouter, DeepSeek, Groq, Ollama, LM Studio, vLLM…</td><td>Local transcript, in memory, last two turns</td></tr>
+    </tbody>
+  </table>
+  <p>The model picker reads <a href="https://models.dev">models.dev</a>: only providers that publish an API base URL, with zero-data-retention mentions badged ★ and sorted first. The badge is a hint from public metadata, not a contract — <a href="guide.html#backends">read it as one</a>.</p>
+</section>
+
+<section>
+  <h2>Build &amp; verify</h2>
+  <pre><code>git clone https://github.com/LogicIncZo/ozhungu &amp;&amp; cd ozhungu
+echo "sdk.dir=/path/to/android-sdk" &gt; local.properties
+make verify     # 29 JVM tests + lint + assembleDebug
+make apk        # → releases/ozhungu-latest.apk
+make coverage   # JaCoCo line table</code></pre>
+  <p>Requires JDK 17 and Android SDK 35. The Zo backend needs the sibling <a href="https://github.com/LogicIncZo/zo-kotlin">zo-kotlin</a> checkout (composite build); the OpenAI-compatible backend doesn't.</p>
+  <p class="dim">The tested core — parser, validator, prompt builder, plan grammar, journal, SSE/transcript — sits at 94–100% line coverage. The untested remainder is UI wiring and SAF plumbing that needs a device. Details in the <a href="guide.html#tests">guide</a>.</p>
+</section>
+
+<section>
+  <h2>Known limits</h2>
+  <ul>
+    <li><code>/Android/data</code> and <code>/Android/obb</code> are unreachable without root or Shizuku — Android's rules, not the app's.</li>
+    <li>Scans cap at 600 files / 4 levels deep; snippets cap at 1200 characters. Point it at subfolders for big piles.</li>
+    <li>If files change behind the app's back mid-session, those individual rows fail with a reason instead of the batch dying.</li>
+    <li>Some document providers refuse <code>moveDocument</code>/<code>renameDocument</code>. You get a per-row failure, not silence.</li>
+    <li>No OCR, no content editing, no duplicate deletion yet — <a href="guide.html#roadmap">roadmap</a>.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>GPL-3.0-or-later · built by <a href="https://github.com/LogicIncZo">LogicIncZo</a> · <a href="https://github.com/LogicIncZo/ozhungu">Source</a> · <a href="guide.html">Guide</a></p>
+  </div>
+</footer>
+</body>
+</html>

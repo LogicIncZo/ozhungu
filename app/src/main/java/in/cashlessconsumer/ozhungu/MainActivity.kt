@@ -62,6 +62,9 @@ class MainActivity : Activity() {
     private lateinit var cleanPage: ScrollView
     private lateinit var catGrid: LinearLayout
     private lateinit var recentWrap: LinearLayout
+    private lateinit var folderWrap: LinearLayout
+    private lateinit var catSection: View
+    private lateinit var recentSection: View
     private lateinit var catListWrap: LinearLayout
     private lateinit var catTitle: TextView
     private lateinit var cleanWrap: LinearLayout
@@ -79,6 +82,9 @@ class MainActivity : Activity() {
 
     private var rows: List<Row> = emptyList()
     private var showingCat: Categories.Cat? = null
+    private val pickedFolders = mutableSetOf<String>()
+    private var allowAutoFolders = true
+    private var folderFilter: String? = null
 
     private data class Row(val op: String, val from: String, val to: String, val note: String, val valid: Boolean, var checked: Boolean)
 
@@ -219,9 +225,17 @@ class MainActivity : Activity() {
                 LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     addView(selBar)
-                    addView(sectionTitle("Categories"))
+                    val catTitle = sectionTitle("Categories")
+                    catSection = catTitle
+                    addView(catTitle)
                     addView(UiKit.cardShell(this@MainActivity, catGrid, padDp = 8f))
-                    addView(sectionTitle("Recent files"))
+                    addView(sectionTitle("Folders"))
+                    val fw = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+                    folderWrap = fw
+                    addView(UiKit.cardShell(this@MainActivity, fw))
+                    val recentTitle = sectionTitle("Recent files")
+                    recentSection = recentTitle
+                    addView(recentTitle)
                     addView(recentCard)
                 },
             )
@@ -289,6 +303,9 @@ class MainActivity : Activity() {
         val s = scan
         selBar.visibility = if (selection.isEmpty()) View.GONE else View.VISIBLE
         selCount.text = "${selection.size} selected"
+        renderFolders()
+        catSection.visibility = if (folderFilter == null) View.VISIBLE else View.GONE
+        recentSection.visibility = if (folderFilter == null) View.VISIBLE else View.GONE
         catGrid.removeAllViews()
         val counts = s?.let { Categories.summarize(it) }?.associate { it.cat to it } ?: emptyMap()
         Categories.Cat.entries.chunked(3).forEach { triple ->
@@ -329,6 +346,79 @@ class MainActivity : Activity() {
         } else {
             recent.forEachIndexed { i, e -> recentWrap.addView(recentRow(e)); if (i < recent.size - 1) recentWrap.addView(UiKit.divider(this)) }
         }
+    }
+
+    /** Google-Files-style folder list: every directory from the scan, deepest nesting flattened. */
+    private fun renderFolders() {
+        folderWrap.removeAllViews()
+        val s = scan
+        if (s == null) {
+            val hint = UiKit.label(this, "Scan a folder to see its sub-folders here.", 13f, UiKit.DIM)
+            hint.setPadding(dp(16), dp(14), dp(16), dp(14))
+            folderWrap.addView(hint)
+            return
+        }
+        if (folderFilter != null) {
+            val back = UiKit.label(this, "←  All folders", 14f, UiKit.PRIMARY, bold = true)
+            back.setPadding(dp(14), dp(12), dp(14), dp(4))
+            back.setOnClickListener { folderFilter = null; renderBrowse() }
+            folderWrap.addView(back)
+            val title = UiKit.label(this, "📁 ${rootDisplayName()}/${folderFilter}", 15f, UiKit.INK, bold = true)
+            title.setPadding(dp(14), dp(4), dp(14), dp(10))
+            folderWrap.addView(title)
+            val inFolder = s.entries.filter { it.relPath.startsWith("$folderFilter/") }
+                .sortedBy { it.relPath.substringAfterLast('/').lowercase() }
+            val subFolders = s.dirPaths.filter { it.startsWith("$folderFilter/") && it.count { c -> c == '/' } == folderFilter!!.count { c -> c == '/' } + 1 }
+            for (d in subFolders.sorted()) {
+                val n = s.entries.count { it.relPath.startsWith("$d/") }
+                folderWrap.addView(folderRow(d, n))
+            }
+            if (inFolder.isEmpty() && subFolders.isEmpty()) {
+                val empty = UiKit.label(this, "Empty folder.", 13f, UiKit.DIM)
+                empty.setPadding(dp(16), dp(12), dp(16), dp(12))
+                folderWrap.addView(empty)
+            } else {
+                inFolder.forEachIndexed { i, e ->
+                    folderWrap.addView(recentRow(e))
+                    if (i < inFolder.size - 1) folderWrap.addView(UiKit.divider(this))
+                }
+            }
+            return
+        }
+        val dirs = s.dirPaths.sorted()
+        if (dirs.isEmpty()) {
+            val hint = UiKit.label(this, "No sub-folders — everything is in the root.", 13f, UiKit.DIM)
+            hint.setPadding(dp(16), dp(14), dp(16), dp(14))
+            folderWrap.addView(hint)
+            return
+        }
+        dirs.forEachIndexed { i, d ->
+            val n = s.entries.count { it.relPath == d || it.relPath.startsWith("$d/") }
+            folderWrap.addView(folderRow(d, n))
+            if (i < dirs.size - 1) folderWrap.addView(UiKit.divider(this))
+        }
+    }
+
+    private fun folderRow(path: String, n: Int): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(11), dp(14), dp(11))
+        }
+        val tint = (0x1A shl 24) or UiKit.PRIMARY
+        row.addView(UiKit.circle(this, "📁", tint, 38))
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val name = UiKit.label(this, path.substringAfterLast('/'), 15f, UiKit.INK, bold = true)
+        val sub = UiKit.label(this, if (n == 0) "empty" else "$n item${if (n == 1) "" else "s"} · $path", 12f, UiKit.DIM)
+        col.addView(name)
+        col.addView(sub)
+        row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(10), 0, 0, 0) })
+        row.addView(UiKit.label(this, "›", 16f, UiKit.DIM, bold = true))
+        row.setOnClickListener {
+            folderFilter = path
+            renderBrowse()
+        }
+        return row
     }
 
     private fun recentRow(e: ScanEntry): LinearLayout {
@@ -407,6 +497,7 @@ class MainActivity : Activity() {
                 setPadding(dp(16), dp(16), dp(16), dp(16))
             }
             cleanWrap.addView(UiKit.cardShell(this, card))
+            cleanWrap.addView(targetFoldersRow())
             val planBtn = UiKit.primaryButton(this, "Get suggestions") { doPlan() }
             planBtn.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             cleanWrap.addView(planBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, dp(12), 0, 0) })
@@ -498,6 +589,65 @@ class MainActivity : Activity() {
 
     private fun refreshBackendLabel() { /* backend chip is drawn in renderClean() */ }
 
+    /** "Move into" row: tap to pick target folders (decision backend uses them as choices). */
+    private fun targetFoldersRow(): View {
+        val lbl = UiKit.label(this,
+            if (pickedFolders.isEmpty()) "Move into — suggested folders (auto)"
+            else if (allowAutoFolders) "Move into — ${pickedFolders.size} picked + suggestions"
+            else "Move into — ${pickedFolders.size} picked folders only",
+            14f, UiKit.INK)
+        val chev = UiKit.label(this, "Choose ▸", 13f, UiKit.PRIMARY, bold = true)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = UiKit.card(this@MainActivity)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            addView(lbl, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(chev)
+            setOnClickListener { showFolderPicker() }
+        }
+        val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        wrap.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, dp(10), 0, 0) })
+        return wrap
+    }
+
+    /** Multi-select sheet over every folder in the scan (recursive) + the auto buckets toggle. */
+    private fun showFolderPicker() {
+        val s = scan ?: return
+        val dirs = s.dirPaths.sorted().filter { it != folderFilter }
+        val entries = ArrayList<Pair<String, Boolean>>()  // label, initiallyChecked
+        entries.add("⟳ Suggested buckets (Screenshots, Bills, …)" to allowAutoFolders)
+        dirs.forEach { entries.add("📁 $it" to (it in pickedFolders)) }
+        val checks = Array(entries.size) { i -> entries[i].second }
+        val list = ScrollView(this)
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8)) }
+        entries.forEachIndexed { i, (label, checked) ->
+            val cb = android.widget.CheckBox(this)
+            cb.text = label
+            cb.isChecked = checked
+            cb.setOnCheckedChangeListener { _, v -> checks[i] = v }
+            box.addView(cb)
+        }
+        list.addView(box)
+        AlertDialog.Builder(this)
+            .setTitle("Move into which folders?")
+            .setView(list)
+            .setPositiveButton("Done") { _, _ ->
+                allowAutoFolders = checks[0]
+                pickedFolders.clear()
+                dirs.forEachIndexed { i, d -> if (checks[i + 1]) pickedFolders.add(d) }
+                renderClean()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Non-decision backends get the picks as a prompt hint. */
+    private fun folderHint(): String =
+        if (pickedFolders.isEmpty()) "" else
+            "\nUSER-PICKED TARGET FOLDERS (prefer these when a move fits): " +
+                pickedFolders.sorted().joinToString(", ")
+
     private fun pickFolder() {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
@@ -551,7 +701,7 @@ class MainActivity : Activity() {
         val s = scopedScan()
         if (s.entries.isEmpty()) { toast("Nothing selected"); return }
         val p = try { buildPlanner(fresh = true, scan = s) } catch (e: IllegalStateException) { toast(e.message ?: ""); return }
-        val prompt = PromptBuilder.build(s)
+        val prompt = PromptBuilder.build(s) + folderHint()
         lastPrompt = prompt
         runPlan(p, prompt)
     }
@@ -575,10 +725,21 @@ class MainActivity : Activity() {
                 OaiPlanner(settings.oaiBaseUrl, settings.oaiKey, settings.oaiModel)
             }
             "decision" -> {
-                if (settings.dEndpoint.isBlank())
+                val or = settings.dFlavor == "openrouter"
+                if (or && settings.dKey.isBlank())
+                    throw IllegalStateException("Paste your OpenRouter API key (⚙)")
+                if (!or && settings.dEndpoint.isBlank())
                     throw IllegalStateException("Set the decision endpoint (⚙)")
-                DecisionPlanner(settings.dEndpoint, settings.dKey, settings.dThreshold,
-                    scan ?: throw IllegalStateException("Scan first"))
+                DecisionPlanner(
+                    endpoint = if (or) DecisionPlanner.OPENROUTER_URL else settings.dEndpoint,
+                    apiKey = settings.dKey,
+                    thresholdPct = settings.dThreshold,
+                    scan = scan ?: throw IllegalStateException("Scan first"),
+                    flavor = settings.dFlavor,
+                    model = settings.dModel,
+                    pickedFolders = pickedFolders.toSet(),
+                    allowAutoFolders = allowAutoFolders,
+                )
             }
             else -> {
                 if (settings.token.isBlank()) throw IllegalStateException("Set your Zo token (⚙)")

@@ -21,7 +21,19 @@ class DecisionPlanner(
     private val apiKey: String,
     private val thresholdPct: Int,
     private val scan: ScanResult,
+    private val flavor: String = "clef",
+    private val model: String = "",
+    private val pickedFolders: Set<String> = emptySet(),
+    private val allowAutoFolders: Boolean = true,
 ) : Planner {
+
+    companion object {
+        /** OpenRouter's System One Decisions API (state+questions, not chat). */
+        const val OPENROUTER_URL = "https://openrouter.ai/api/alpha/decisions"
+
+        /** OpenRouter's rolling alias — always the newest Jev. */
+        const val DEFAULT_OR_MODEL = "~typesafe/jev-latest"
+    }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -39,13 +51,21 @@ class DecisionPlanner(
     ) {
         Thread {
             try {
-                val folders = DecisionModel.folders(scan)
+                val folders = DecisionModel.folders(scan, pickedFolders, allowAutoFolders)
                 val state = DecisionModel.stateJson(scan)
                 val batches = DecisionModel.batches(scan, folders)
+                val openRouter = flavor == "openrouter"
                 val answers = HashMap<String, DecisionModel.ChoiceAnswer>()
                 batches.forEachIndexed { k, b ->
                     onStatus("Asking decision model — batch ${k + 1}/${batches.size}…")
-                    answers += ask(DecisionModel.requestJson(b, state))
+                    val req = if (openRouter) {
+                        DecisionModel.openRouterRequestJson(
+                            model.ifBlank { "~typesafe/jev-latest" }, b, state,
+                        )
+                    } else {
+                        DecisionModel.requestJson(b, state)
+                    }
+                    answers += ask(req, openRouter)
                 }
                 val (actions, skipped) = DecisionModel.decide(scan, answers, thresholdPct / 100.0)
                 onStatus(null)
@@ -57,9 +77,16 @@ class DecisionPlanner(
         }.start()
     }
 
-    private fun ask(requestJson: String): Map<String, DecisionModel.ChoiceAnswer> {
+    private fun ask(
+        requestJson: String,
+        openRouter: Boolean,
+    ): Map<String, DecisionModel.ChoiceAnswer> {
         val body = requestJson.toRequestBody("application/json".toMediaType())
-        val rb = Request.Builder().url(endpoint).post(body)
+        if (openRouter && apiKey.isBlank()) {
+            throw IOException("OpenRouter needs an API key — add one in Settings")
+        }
+        val url = if (openRouter) OPENROUTER_URL else endpoint
+        val rb = Request.Builder().url(url).post(body)
         if (apiKey.isNotBlank()) rb.header("Authorization", "Bearer $apiKey")
         val c = client.newCall(rb.build())
         call = c

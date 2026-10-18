@@ -110,6 +110,16 @@ object UiKit {
         }
     }
 
+    /** Small rounded count pill for the right edge of a row. */
+    fun badge(c: Context, text: String): TextView =
+        TextView(c).apply {
+            this.text = text
+            textSize = 12f
+            setTextColor(DIM)
+            background = card(c, 12f, PAGE_BG)
+            setPadding(dp(c, 8f), dp(c, 2f), dp(c, 8f), dp(c, 2f))
+        }
+
     /** 1234 → "1.2 KB" for summary lines. */
     fun humanBytes(n: Long): String {
         if (n < 1024) return "$n B"

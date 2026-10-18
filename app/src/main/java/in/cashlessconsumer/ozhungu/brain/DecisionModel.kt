@@ -58,9 +58,25 @@ object DecisionModel {
         "Destination folder for this file inside the scanned root, by its name and kind. " +
             "Pick the best fit, or $KEEP when unsure."
 
-    /** Ordered candidate vocabulary: existing folders first, then canonical, KEEP last. */
-    fun folders(scan: ScanResult): Map<String, String> {
+    /**
+     * Ordered candidate vocabulary. [picked] (user-chosen, any depth) comes first —
+     * they override the auto set; when [allowAuto] is false the canonical buckets are
+     * suppressed entirely (only picked folders + existing root dirs + KEEP). Recursive
+     * picked paths ("a/b") are allowed as targets; root-level dirs follow picked entries.
+     */
+    fun folders(
+        scan: ScanResult,
+        picked: Set<String> = emptySet(),
+        allowAuto: Boolean = true,
+    ): Map<String, String> {
         val out = LinkedHashMap<String, String>()
+        picked.filter { it.isNotBlank() }.sorted().forEach { dir ->
+            if (dir !in out) out[dir] = "you picked this folder"
+        }
+        if (!allowAuto) {
+            val capped = out.entries.take(MAX_FOLDERS - 1).associate { it.key to it.value }
+            return LinkedHashMap(capped).apply { put(KEEP, "leave the file where it is (no good option / unsure)") }
+        }
         scan.dirPaths.filter { !it.contains('/') }.sorted().forEach { dir ->
             if (dir !in out) out[dir] = "already exists in this folder"
         }
@@ -98,7 +114,15 @@ object DecisionModel {
     /** The state is the same listing JSON the LLM backends see. */
     fun stateJson(scan: ScanResult): String = PlanParser.planToJsonForPrompt(scan)
 
-    fun requestJson(batch: Batch, state: String): String {
+    /** Raw Jev-compatible envelope (Cloudflare Workers AI, self-hosted). */
+    fun requestJson(batch: Batch, state: String): String =
+        envelope(null, batch, state)
+
+    /** OpenRouter Decisions API envelope: adds the required "model" field. */
+    fun openRouterRequestJson(model: String, batch: Batch, state: String): String =
+        envelope(model, batch, state)
+
+    private fun envelope(model: String?, batch: Batch, state: String): String {
         val questions = JSONObject()
         for (q in batch.questions) {
             questions.put(
@@ -109,7 +133,9 @@ object DecisionModel {
                     .put("criteria", JSONObject(q.criteria)),
             )
         }
-        return JSONObject().put("state", state).put("questions", questions).toString()
+        val body = JSONObject().put("state", state).put("questions", questions)
+        if (!model.isNullOrBlank()) body.put("model", model)
+        return body.toString()
     }
 
     /** Tolerant parse: bare Jev `answers` or Workers-AI `{result:{answers}}` envelope. */
@@ -129,7 +155,9 @@ object DecisionModel {
             val choice = a.optString("choice")
             if (choice.isEmpty()) continue
             val probs = a.optJSONObject("probabilities")
-            val best = probs?.optDouble(choice)?.takeIf { !it.isNaN() } ?: -1.0
+            val best = (probs?.optDouble(choice)?.takeIf { !it.isNaN() })
+                ?: (a.optDouble("confidence").takeIf { !it.isNaN() && it in 0.0..1.0 })
+                ?: -1.0
             out[id] = ChoiceAnswer(choice, best)
         }
         return out

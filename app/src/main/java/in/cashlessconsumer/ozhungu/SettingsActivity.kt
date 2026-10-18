@@ -19,6 +19,7 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import `in`.cashlessconsumer.ozhungu.brain.DecisionPlanner
 import `in`.cashlessconsumer.ozhungu.brain.ModelsDev
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -50,6 +51,10 @@ class SettingsActivity : Activity() {
     private lateinit var dEndpoint: EditText
     private lateinit var dKey: EditText
     private lateinit var dThreshold: EditText
+    private lateinit var dFlavorClef: android.widget.RadioButton
+    private lateinit var dFlavorOr: android.widget.RadioButton
+    private lateinit var dModel: EditText
+    private var dModelRowTag: View? = null
     private lateinit var zoStatus: TextView
     private lateinit var oaiStatus: TextView
     private lateinit var decisionStatus: TextView
@@ -204,10 +209,31 @@ class SettingsActivity : Activity() {
         decisionPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         decisionPanel.addView(header("Decision model (System One)"))
         decisionPanel.addView(caption(
-            "Jev-compatible endpoint. Cloudflare Workers AI: create an API token with " +
-                "Workers AI edit permission and use the ai/run URL of @cf/cloudflare/clef " +
-                "or clef-flash. Self-hosted Clef: its /v1/decisions URL, no key needed."
+            "Typed choice questions with calibrated probabilities — no free-text " +
+                "generation. Two flavours: any Jev-compatible endpoint, or OpenRouter's " +
+                "System One catalogue (Jev and friends, billed to your OpenRouter key)."
         ))
+        val dRadioClef = android.widget.RadioButton(this).apply { text = "Jev-compatible endpoint (Cloudflare Clef, self-hosted)" ; isChecked = settings.dFlavor != "openrouter" }
+        val dRadioOr = android.widget.RadioButton(this).apply { text = "OpenRouter — System One models"; isChecked = settings.dFlavor == "openrouter" }
+        dFlavorClef = dRadioClef
+        dFlavorOr = dRadioOr
+        dRadioClef.setOnClickListener { dRadioOr.isChecked = false; syncDFlavor() }
+        dRadioOr.setOnClickListener { dRadioClef.isChecked = false; syncDFlavor() }
+        decisionPanel.addView(dRadioClef)
+        decisionPanel.addView(dRadioOr)
+        decisionPanel.addView(label("Model (OpenRouter flavour)"))
+        val dModelRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
+        val dModelBox = EditText(this).apply {
+            setText(settings.dModel.ifEmpty { DecisionPlanner.DEFAULT_OR_MODEL })
+            hint = DecisionPlanner.DEFAULT_OR_MODEL
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        dModel = dModelBox
+        dModelRow.addView(dModelBox, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        dModelRow.addView(button("Browse") { pickOrModel() })
+        dModelRow.visibility = View.GONE
+        dModelRowTag = dModelRow
+        decisionPanel.addView(dModelRow)
         decisionPanel.addView(label("Endpoint URL (full)"))
         val dUrlBox = EditText(this).apply {
             setText(settings.dEndpoint)
@@ -231,6 +257,7 @@ class SettingsActivity : Activity() {
         decisionPanel.addView(rowOf(button("Test connection") { testDecision() }))
         decisionStatus = caption("")
         decisionPanel.addView(decisionStatus)
+        syncDFlavor()
         body.addView(decisionPanel)
 
         // ── Privacy + save ──────────────────────────────────────────────────
@@ -264,6 +291,63 @@ class SettingsActivity : Activity() {
         }
     }
 
+    private fun syncDFlavor() {
+        val or = dFlavorOr.isChecked
+        dModelRowTag?.visibility = if (or) View.VISIBLE else View.GONE
+        dEndpoint.visibility = if (or) View.GONE else View.VISIBLE
+    }
+
+    /** GET openrouter /api/v1/models?output_modalities=decisions — public, no key. */
+    private fun pickOrModel() {
+        decisionStatus.text = "Loading OpenRouter System One models…"
+        Thread {
+            try {
+                val req = Request.Builder()
+                    .url("https://openrouter.ai/api/v1/models?output_modalities=decisions")
+                    .build()
+                http.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) throw java.io.IOException("HTTP ${resp.code}")
+                    val arr = JSONObject(resp.body?.string().orEmpty()).optJSONArray("data")
+                        ?: throw java.io.IOException("no data array")
+                    val rows = ArrayList<Triple<String, String, String>>()
+                    for (i in 0 until arr.length()) {
+                        val m = arr.optJSONObject(i) ?: continue
+                        val id = m.optString("id")
+                        if (id.isEmpty()) continue
+                        val name = m.optString("name", id)
+                        val p = m.optJSONObject("pricing")
+                        val pin = p?.optString("prompt", "") ?: ""
+                        val price = if (pin.isBlank() || pin == "-1") "varies" else "$" + pin + "/M in"
+                        rows.add(Triple(id, name, price))
+                    }
+                    rows.sortBy { it.second.lowercase() }
+                    val pinned = rows.firstOrNull { it.first == DecisionPlanner.DEFAULT_OR_MODEL }
+                    if (pinned != null) {
+                        rows.remove(pinned)
+                        rows.add(0, pinned)
+                    }
+                    runOnUiThread {
+                        decisionStatus.text = ""
+                        if (rows.isEmpty()) {
+                            decisionStatus.text = "No System One models listed right now."
+                        } else {
+                            pickerDialog?.dismiss()
+                            pickerDialog = android.app.AlertDialog.Builder(this)
+                                .setTitle("System One models on OpenRouter")
+                                .setItems(rows.map { "${it.second}\n${it.first} · ${it.third}" }.toTypedArray()) { _, w ->
+                                    dModel.setText(rows[w].first)
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { decisionStatus.text = "✗ ${e.message?.take(140)}" }
+            }
+        }.start()
+    }
+
     private fun syncPanels() {
         zoPanel.visibility = if (radioZo.isChecked) View.VISIBLE else View.GONE
         oaiPanel.visibility = if (radioOai.isChecked) View.VISIBLE else View.GONE
@@ -281,7 +365,9 @@ class SettingsActivity : Activity() {
         settings.oaiBaseUrl = oaiUrl.text.toString().trim().trimEnd('/')
         settings.oaiKey = oaiKey.text.toString().trim()
         settings.oaiModel = oaiModel.text.toString().trim()
-        settings.dEndpoint = dEndpoint.text.toString().trim()
+        settings.dFlavor = if (dFlavorOr.isChecked) "openrouter" else "clef"
+        settings.dModel = dModel.text.toString().trim()
+        settings.dEndpoint = if (dFlavorOr.isChecked) DecisionPlanner.OPENROUTER_URL else dEndpoint.text.toString().trim()
         settings.dKey = dKey.text.toString().trim()
         settings.dThreshold = dThreshold.text.toString().trim().toIntOrNull()?.coerceIn(1, 99) ?: 60
         Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
@@ -348,14 +434,17 @@ class SettingsActivity : Activity() {
 
     /** One-question noul round-trip: proves state+questions+answers wiring works. */
     private fun testDecision() {
-        val url = dEndpoint.text.toString().trim()
+        val openrouter = dFlavorOr.isChecked
+        val url = if (openrouter) DecisionPlanner.OPENROUTER_URL else dEndpoint.text.toString().trim()
         if (url.isBlank()) { decisionStatus.text = "Paste an endpoint URL first."; return }
         val key = dKey.text.toString().trim()
+        if (openrouter && key.isBlank()) { decisionStatus.text = "Paste your OpenRouter API key first."; return }
         decisionStatus.text = "Testing…"
         Thread {
             try {
                 val body = JSONObject()
-                    .put("state", "connection test")
+                if (openrouter) body.put("model", dModel.text.toString().trim().ifEmpty { DecisionPlanner.DEFAULT_OR_MODEL })
+                body.put("state", "connection test")
                     .put(
                         "questions",
                         JSONObject().put(
@@ -365,7 +454,7 @@ class SettingsActivity : Activity() {
                                 .put("instructions", "Does 1+1 equal 2?"),
                         ),
                     ).toString()
-                val rb = Request.Builder().url(url).post(body.toRequestBody("application/json".toMediaType()))
+                val rb = Request.Builder().url(url).post(body.toString().toRequestBody("application/json".toMediaType()))
                 if (key.isNotBlank()) rb.header("Authorization", "Bearer $key")
                 http.newCall(rb.build()).execute().use { resp ->
                     val text = resp.body?.string().orEmpty()

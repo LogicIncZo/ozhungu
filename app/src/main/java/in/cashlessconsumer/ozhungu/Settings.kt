@@ -41,6 +41,15 @@ class Settings(context: Context) {
     var dThreshold: Int
         get() = sp.getInt(KEY_D_THRESHOLD, 60)
         set(v) = sp.edit().putInt(KEY_D_THRESHOLD, v).apply()
+    /** Decision backend flavor: "clef" (raw Jev-compatible endpoint) or "openrouter". */
+    var dFlavor: String
+        get() = sp.getString(KEY_D_FLAVOR, "clef").orEmpty()
+        set(v) = sp.edit().putString(KEY_D_FLAVOR, v).apply()
+
+    /** Decision model id (openrouter flavor only), e.g. ~typesafe/jev-latest. */
+    var dModel: String
+        get() = sp.getString(KEY_D_MODEL, "").orEmpty()
+        set(v) = sp.edit().putString(KEY_D_MODEL, v).apply()
 
     /** OpenAI-compatible base URL, e.g. https://openrouter.ai/api/v1 (no trailing slash). */
     var oaiBaseUrl: String
@@ -70,5 +79,7 @@ class Settings(context: Context) {
         private const val KEY_D_ENDPOINT = "decision_endpoint"
         private const val KEY_D_KEY = "decision_key"
         private const val KEY_D_THRESHOLD = "decision_threshold"
+        private const val KEY_D_FLAVOR = "decision_flavor"
+        private const val KEY_D_MODEL = "decision_model"
     }
 }

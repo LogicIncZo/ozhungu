@@ -47,6 +47,59 @@ class DecisionModelTest {
     }
 
     @Test
+    fun `picked folders come first and survive the cap`() {
+        val many = (0 until 30).map { "d$it" }.toSet()
+        val s = scan(files = listOf("x.pdf"), dirs = many)
+        val f = DecisionModel.folders(s, picked = setOf("keep-me", "a/b"))
+        val keys = f.keys.toList()
+        assertEquals(listOf("a/b", "keep-me"), keys.take(2))
+        assertTrue(keys.contains(DecisionModel.KEEP))
+        assertTrue(keys.last() == DecisionModel.KEEP)
+        // picked entries must never be crowded out by the cap
+        assertTrue(f.containsKey("keep-me"))
+    }
+
+    @Test
+    fun `allowAuto false limits options to picked plus keep`() {
+        val s = scan(files = listOf("x.pdf"), dirs = setOf("notes", "Receipts"))
+        val f = DecisionModel.folders(s, picked = setOf("Mine"), allowAuto = false)
+        assertEquals(setOf("Mine", DecisionModel.KEEP), f.keys)
+        assertEquals("you picked this folder", f["Mine"])
+    }
+
+    @Test
+    fun `openrouter envelope adds model field and clef envelope omits it`() {
+        val s = scan(files = listOf("x.pdf"))
+        val folders = DecisionModel.folders(s)
+        val b = DecisionModel.batches(s, folders).first()
+        val orReq = JSONObject(DecisionModel.openRouterRequestJson("~typesafe/jev-latest", b, "{}"))
+        assertEquals("~typesafe/jev-latest", orReq.getString("model"))
+        assertTrue(orReq.has("state") && orReq.has("questions"))
+        val clefReq = JSONObject(DecisionModel.requestJson(b, "{}"))
+        assertFalse(clefReq.has("model"))
+    }
+
+    @Test
+    fun `parse answers accepts the openrouter answers envelope`() {
+        val raw = JSONObject()
+            .put("id", "gen-1")
+            .put("model", "~typesafe/jev-latest")
+            .put(
+                "answers",
+                JSONObject().put(
+                    "q0",
+                    JSONObject()
+                        .put("type", "choice")
+                        .put("choice", "Bills")
+                        .put("confidence", 0.87),
+                ),
+            ).toString()
+        val a = DecisionModel.parseAnswers(raw)
+        assertEquals("Bills", a["q0"]?.choice)
+        assertEquals(0.87, a["q0"]?.best!!, 1e-9)
+    }
+
+    @Test
     fun `batches cap at 64 questions with stable ids`() {
         val files = (0 until 130).map { "file$it.txt" }
         val s = scan(files = files)

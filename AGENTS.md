@@ -24,6 +24,15 @@ AGP 8.7.3 + Kotlin 2.0.21 (same toolchain as zo-voice/zai-widget). SDK `/opt/and
 - `MainActivity` — single Activity, programmatic Views, CheckBox list as the review surface.
   `onDone` from the stream arrives on an OkHttp worker thread — always `runOnUiThread` for UI.
 
+## Settings (v0.3.0+)
+
+`SettingsActivity` (full-screen, plain Views — no Compose, no XML layouts): backend radio
+cards (Zo / OpenAI-compatible) toggle section visibility; **Test** buttons do real
+round-trips (Zo `GET /models/available` via `ZoApi.listModels`, OAI `GET {base}/models`);
+`Browse catalog` opens the searchable models.dev browser (picker filter/rows are pure
+`ModelsDev.filter`/`ModelsDev.rows` — unit-tested). MainActivity deep-links here on
+first run and re-reads Settings + drops a stale planner in `onResume()`.
+
 ## Package quirk
 
 Package path starts with `in.` (India TLD) → must be backtick-escaped:

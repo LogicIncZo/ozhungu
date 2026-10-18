@@ -16,7 +16,7 @@
     <div class="prompt">$ ozhungu --folder Download --backend zo</div>
     <h1>Ozhungu <span class="ta">ஒழுங்கு</span></h1>
     <p class="tagline">An Android file organizer where a model proposes and <em>you</em> decide. Nothing moves until you tick it and press Apply — and Undo is one tap.</p>
-    <p class="meta">v0.2.1 · SAF-native (no All files access) · Zo or any OpenAI-compatible model · GPL-3.0</p>
+    <p class="meta">v0.5.0 · SAF-native (no All files access) · Zo, OpenAI-compatible, or System One decision model · GPL-3.0</p>
     <div class="cta">
       <a class="btn" href="https://github.com/LogicIncZo/ozhungu/releases/latest">Download APK</a>
       <a class="btn ghost" href="guide.html">Guide</a>
@@ -28,10 +28,14 @@
 <main class="wrap">
 
 <section>
+  <h2>A familiar face</h2>
+  <p>v0.5 gives Ozhungu a Files-by-Google-style interface: a <strong>Browse</strong> tab with category tiles (Images, Videos, Audio, Documents, Archives, Apps), a Recent list, and long-press multi-select; a <strong>Clean</strong> tab where the model's suggestions appear as reviewable cards with an <em>Apply N</em> / <em>Undo</em> bottom bar. Same engine underneath — moves only, local guardrails, journaled undo.</p>
+</section>
+
+<section>
   <h2>Why this exists</h2>
   <p>Android file managers are good at showing you files and bad at <em>deciding</em> what to do with them. Cloud "smart" organizers decide for you and upload your data to do it. Ozhungu takes the third path: let a model do the tedious part — reading the pile and proposing a structure — while the phone keeps every decision local, reversible, and visible.</p>
 </section>
-
 <section>
   <h2>The loop</h2>
   <div class="pipe">pick folder  →  scan (SAF, ≤600 files, 4 levels)  →  model proposes a plan

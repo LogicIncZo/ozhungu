@@ -37,16 +37,16 @@
 <main class="wrap">
 
 <section id="firstrun">
-  <h2>First run</h2>
+  <h2>First run (v0.5 — Files-by-Google-style UI)</h2>
   <ol>
-    <li><strong>Pick folder.</strong> Android's folder picker opens (<code>ACTION_OPEN_DOCUMENT_TREE</code>). Pick the folder you want organised — usually <code>Download</code>, <code>Documents</code> or <code>Pictures</code>. The grant is persisted, so it survives restarts.</li>
-    <li><strong>Set a backend</strong> in the full-screen <em>⚙ Settings</em> screen (it opens automatically on first run): radio-card backend choice, then a Zo access token, or an OpenAI-compatible base URL + key + model, with <em>Test</em> buttons that round-trip the endpoint and an in-place models.dev browser. See <a href="#backends">Backends</a>.</li>
-    <li><strong>Scan.</strong> The scan walks up to 4 levels deep and stops at 600 files. Progress shows in the status line; unreadable directories are counted, not fatal.</li>
-    <li><strong>Ask Zo for a plan</strong> — optionally with a nudge in the text box, e.g. <em>"put invoices from March under Bills/2026"</em>.</li>
-    <li><strong>Review.</strong> Valid rows are ticked by default; rejected rows are shown with the rule that killed them. Untick anything you don't want.</li>
-    <li><strong>Apply checked</strong>, then <strong>Undo last apply</strong> if you don't like the result.</li>
+    <li><strong>Get started.</strong> The home screen opens with a hero card — <em>Organise a folder</em>. Tap it: Android's folder picker (<code>ACTION_OPEN_DOCUMENT_TREE</code>) opens. Pick the folder you want organised — usually <code>Download</code>, <code>Documents</code> or <code>Pictures</code>. The grant is persisted, so it survives restarts.</li>
+    <li><strong>Set a backend</strong> from <em>⚙ Settings</em> (top bar): radio-card backend choice, then a Zo access token, or an OpenAI-compatible base URL + key + model, with <em>Test</em> buttons that round-trip the endpoint and an in-place models.dev browser. See <a href="#backends">Backends</a>.</li>
+    <li><strong>Browse tab.</strong> The scan runs automatically and fills the category tiles (Images, Videos, Audio, Documents, Archives, Apps) and the Recent list, just like Files by Google. Tap a tile to see that category's files; long-press files to select them if you want the plan scoped to just those.</li>
+    <li><strong>Clean tab.</strong> Tap <em>Get suggestions</em> (optionally with a nudge in the text box, e.g. <em>"put invoices from March under Bills/2026"</em>).</li>
+    <li><strong>Review.</strong> Valid suggestions are ticked by default on card rows (file icon, move arrow, reason); rejected rows show the rule that killed them. Untick anything you don't want.</li>
+    <li><strong>Apply N</strong> on the sticky bottom bar, then <strong>Undo</strong> if you don't like the result.</li>
   </ol>
-  <div class="note">Refinement works as a conversation: with a plan on screen, type "no — keep the photos where they are and only sort the PDFs" into the same box and ask again. With the Zo backend the server holds the thread; with an OpenAI-compatible backend the app keeps a local transcript (system + last two turns) in memory only.</div>
+  <div class="note">Refinement works as a conversation: with suggestions on screen, type "no — keep the photos where they are and only sort the PDFs" into the same box and ask again. With the Zo backend the server holds the thread; with an OpenAI-compatible backend the app keeps a local transcript (system + last two turns) in memory only.</div>
 </section>
 
 <section id="backends">

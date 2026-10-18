@@ -10,6 +10,11 @@ Part of the Zo ecosystem — talks to the same `/zo/ask` API as zo-voice, via th
 [zo-kotlin](https://github.com/LogicIncZo/zo-kotlin) SDK (`dev.zocomputer:ask`, consumed from
 source when `../zo-kotlin` is checked out next to this repo, Maven artifact otherwise).
 
+**v0.5 — Files-by-Google-style UI**: Browse tab (category tiles with counts, Recent list,
+long-press multi-select that scopes the plan), Clean tab (suggestion cards, Apply N /
+Undo bottom bar), top app bar. Plain-Views `UiKit` + pure `Categories` (100% covered);
+47 JVM tests.
+
 **v0.2 — pluggable backends:** besides Zo, any OpenAI-compatible `/chat/completions`
 endpoint works. The model picker defaults from [models.dev](https://models.dev/api.json):
 it lists the OpenAI-compatible providers (SDK `@ai-sdk/openai-compatible` + an `api` base
@@ -37,19 +42,39 @@ sources, `..`/absolute escapes, overwrites of scanned files, target collisions, 
 and targets that are existing folders. Execution goes through SAF with the user's own
 persisted tree grant — no `MANAGE_EXTERNAL_STORAGE`, no `All files access` prompt.
 
+## Usage (v0.5 — Files-by-Google-style UI)
+
+- **Browse tab** — category tiles (Images / Videos / Audio / Documents / Archives / Apps /
+  Other, live counts + bytes), Recent list (newest first), per-category browsing, and
+  tap-to-select files; the selection scopes the next plan.
+- **Clean tab** — the agentic surface: a hero ("N files · organise them") with the
+  backend chip, *Get suggestions* → plan checklist cards (move icon, from → to, reason,
+  tap to keep/drop), sticky *Apply N* bar, *Refine* box, and *Undo last apply*.
+- **First run** — "Organise your files" hero with one *Choose a folder* button; a
+  ⚙ toolbar action opens the full-screen Settings (backend radio cards, Test
+  round-trips, models.dev browser).
+
+The pipeline underneath is unchanged: SAF scan → planner (Zo / OpenAI-compatible /
+System One decision model) → PlanValidator → apply + journal undo.
+
+## Legacy CLI-style flow (pre-0.5)
+
 ## Usage
 
-1. ⚙ Settings — a full-screen settings UI: radio-card backend choice (Zo /
-   OpenAI-compatible / System One decision model), password-masked key fields with
-   show/hide, **Test** buttons that round-trip the endpoint (Zo lists your models; OAI
-   does `GET {base}/models`; decision models answer one `noul` question), a searchable
-   in-place models.dev browser (★ ZDR-defaults first, provider-grouped), and a
-   model-list fetch for Zo. Saves back to EncryptedSharedPreferences.
-2. Pick folder — SAF tree picker (Downloads, internal storage root, SD card…).
-3. Scan — walks the tree (depth ≤ 4, ≤ 600 files, snippets for small text files).
-4. Ask for a plan — the Zo/OAI backends stream one; the decision backend answers in batches; the plan lands as a checklist of
-   `✓ MOVE a/b.pdf → Bills/2026/a.pdf (reason)` rows.
-5. Uncheck what you don't want → **Apply** → **Undo** reverses the whole batch newest-first.
+The UI is Files-by-Google-style: **Browse** tab (category tiles, Recent, long-press
+multi-select) and **Clean** tab (the organise loop).
+
+1. First run: pick a folder (SAF tree picker — Downloads, internal storage root, SD card…)
+   and set a backend in ⚙ Settings.
+2. **Clean** tab → *Scan* walks the tree (depth ≤ 4, ≤ 600 files, snippets for small text
+   files). The Browse tab fills with category tiles and a Recent list.
+3. Select files in Browse (long-press) to scope a plan to just those, or leave the
+   selection empty to plan over the whole scan.
+4. *Get suggestions* — the Zo/OAI backends stream a plan; the decision backend answers in
+   batches; suggestions land as reviewable cards (ticked by default, rejections shown with
+   the rule that killed them).
+5. **Apply N** (bottom bar) applies only the ticked rows; **Undo** reverses the whole batch
+   newest-first.
 6. Refine in the same conversation: "put invoices from March under Bills/2026".
 
 **v0.4 — System One decision models:** a third backend speaks the Jev-compatible
@@ -62,7 +87,7 @@ option). Argmax at or above a configurable confidence floor becomes a move; ever
 else — low confidence, __keep__, already-in-place — is skipped. Same validator, review
 checklist, executor, and undo journal as the LLM backends.
 
-## Limits (v0.4)
+## Limits (v0.5)
 
 - Moves/renames only — no delete, no copy, no content editing.
 - OAI-compatible mode sends the same scoped listing to whatever endpoint you configure —

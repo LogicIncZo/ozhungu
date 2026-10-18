@@ -95,3 +95,21 @@ confidence floor %; Test = one `noul` round-trip. 10 unit tests in `DecisionMode
 DecisionModel at 97.4% lines, DecisionPlanner is the OkHttp boundary (untested like the
 other network paths). Refine is intentionally unsupported here (single-shot): the app
 raises "single-shot backend" instead of silently ignoring the refinement.
+
+## v0.5 — Files-by-Google-style UI (2026-10-18)
+
+MainActivity is a two-tab shell: **Browse** (top bar with folder name + refresh + settings,
+category tile grid from `scan/Categories.kt`, Recent list, long-press multi-select with a
+selection bar — "Clean up N") and **Clean** (state machine: hero → scanned summary →
+suggestion cards → applied, with sticky Apply N/Undo bottom bar, backend chip, refine box).
+View factories live in `ui/UiKit.kt` (plain framework widgets, rounded GradientDrawables,
+Google-blue palette — no Material/appcompat dependency, keep it that way).
+
+Invariants:
+- `Categories` is pure and unit-tested (100% lines); it owns categorize/summarize/recent/
+  restrict. `restrict(scan, selection)` is how a Browse multi-select scopes a plan —
+  empty set = whole scan. DecisionPlanner and PromptBuilder both receive the scoped copy.
+- Plan rows still map 1:1 to `ValidatedPlan.valid` by index (`rows.getOrNull(idx)?.checked`)
+  — the invalid rows are appended after and are never checkable. Don't reorder rows.
+- `setBusy` gates plan/apply/undo; the bottom-bar apply label always recomputes from rows.
+- Do not add Compose, appcompat, or Material Components. No XML layouts.

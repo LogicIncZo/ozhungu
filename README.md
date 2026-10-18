@@ -92,7 +92,7 @@ checklist, executor, and undo journal as the LLM backends.
 an All-folders browser in Browse (recursive, drilldown), and a Move-into folder picker on
 Clean that feeds the decision model's option set (picked folders first).
 
-## Limits (v0.5)
+## Limits (v0.6)
 
 - Moves/renames only — no delete, no copy, no content editing.
 - OAI-compatible mode sends the same scoped listing to whatever endpoint you configure —
